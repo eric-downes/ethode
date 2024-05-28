@@ -1,0 +1,7 @@
+eth = ETH = Ether
+wei = 10 ** -18 * eth
+kwei = 10 ** 3 * wei = babbage = yacto_eth = yETH
+Mwei = 10 ** 6 * wei = mwei = lovelace = pico_eth = pETH
+Gwei = 10 ** 9 * wei = gewi = shannon = nano_eth = nETH
+micro_eth = 10 ** -6 * eth = uETH = szabo = microeth
+milli_eth = 10 ** -3 * eth = mETH = finney = millieth 
