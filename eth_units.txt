@@ -1,7 +1,17 @@
 eth = ETH = Ether
+kETH = 1000 * ETH = keth = kilo_eth
+METH = 10 ** 6 * ETH = mega_eth
+GETH = 10 ** 9 * ETH = giga_eth
 wei = 10 ** -18 * eth
 kwei = 10 ** 3 * wei = babbage = yacto_eth = yETH
 Mwei = 10 ** 6 * wei = mwei = lovelace = pico_eth = pETH
 Gwei = 10 ** 9 * wei = gewi = shannon = nano_eth = nETH
 micro_eth = 10 ** -6 * eth = uETH = szabo = microeth
 milli_eth = 10 ** -3 * eth = mETH = finney = millieth 
+
+slots = validator_slots = slot
+epoch = 32 * slots
+ave_slot_time = 12 * sec / slot
+ave_epoch = epoch * ave_slot_time
+base_reward_factor = 64 * ETH / epoch
+
