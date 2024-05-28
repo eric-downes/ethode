@@ -27,7 +27,8 @@ def unitful(func):
         assert isinstance(ret, ret_type), \
             f'output value {ret} fails to be type {ret_type}'
         return ret
-
+    return wrapper
+    
 @unitful
 def total_issuance(eth_supply: U.ETH,
                  epochs_per_year: Optional[U.year] = None) -> U.ETH:
