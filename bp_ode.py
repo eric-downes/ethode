@@ -6,7 +6,7 @@ def model(variables: tuple[tuple|float], time: float,
 
     # unpacking
     supply_buy, supply_sell, supply_staked = variables[0 : 3]
-    base_gas_fee, price = variables[3 : 5]
+    base_fee, price = variables[3 : 5]
 
     # constants
     frac = params['fraction_buyer_fees']
@@ -19,19 +19,18 @@ def model(variables: tuple[tuple|float], time: float,
     # EXOGENOUS VARS BP does not model
     gasc = params['gas_consumed_this_block'](time) # he treats this as a dep var
     gasc_prev = params['gas_consumed_last_block'](time) 
-    gasp = params['gas_price_ETH'](time) # doesn't model this beyond reflexivity
+    gasp = params['gas_price_ETH'](time, base_fee) # doesn't model this beyond reflexivity
     forecast_inflation = params['expected_inflation_function']
     
     # basic conservation eqs
     supply = supply_buy + supply_sell + supply_staked
-    dsupply = supply * yld  -  base_gas_fee * gasc # mass conservation
+    dsupply = supply * yld  -  base_fee * gasc # mass conservation
     fees = gasc * gasp # eq 5 non-log version
-    assert fees >= base_gas_fee
     
     # BIG BP ASSUMPTIONS
-    # no demand effects on price.... ????
+    # no demand effects on price
     dprice = - price * dsupply / (1 + dsupply)
-    # negA = volume ETH bought by S_buy; bizzare?
+    # negA = volume ETH bought by S_buy "money demand eq"
     negA = supply / supply_staked * forecast_inflation(dsupply)
         
     # evolution    
@@ -64,7 +63,7 @@ def get_params(nblocks:int, dt:float) -> dict[str, float|Callable]:
               'yield_curve': lambda staked: 2.6 / math.sqrt(staked) * U.dimless,
               'gas_consumed_this_block': lambda t: _gas[t // dt],
               'gas_consumed_last_block': lambda t: _gas[max(0, t // dt - 1)],
-              'gas_price_ETH': lambda x: 600 * U.gwei,
+              'gas_price_ETH': lambda x, base_fee: max(600, base_fee) * U.gwei,
               'expected_inflation_function': lambda x: x}
     return params
     
