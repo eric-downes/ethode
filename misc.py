@@ -1,11 +1,17 @@
-from matplotlib import pyplot as plt
-import numpy as np
+# misc experiments / notes
+
 
 '''
 solving the toy model:
 T = Total ETH
 S = Staked ETH
 U = Unstabled ETH
+'''
+
+from matplotlib import pyplot as plt
+import numpy as np
+
+'''
 
 dT/dt = y(S)T = dS/dt + dU/dt
 
@@ -35,6 +41,10 @@ yy = x + np.arctan(x)
 
 plt.plot(x,y,'b-', y,x,'r-', x, yy,'go')
 
+
+
+### fees (incomplete)
+
 from pint import UnitRegistry
 import numpy as np
 
@@ -51,5 +61,4 @@ gas_scenarios = { # how much gas used per block
     'normal': U.gas_std * np.random.randn(NBLOCKS) + U.gas_target
     }
     
-def fees
 
