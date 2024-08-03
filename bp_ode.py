@@ -35,9 +35,9 @@ def model(variables: tuple[tuple|float], time: float,
         
     # evolution    
     # supply == S_staked + S_sell + S_buy
-    dS_buy = negA  -  gasc * fees * frac
-    dS_sell = - negA  -  gasc * fees * (1 - frac)
-    dS_staked = supply * yld  +  gasc * (fees  -  base_fee)
+    dS_buy = negA  -  fees * frac
+    dS_sell = - negA  -  fees * (1 - frac)
+    dS_staked = supply * yld  +  fees  -  gasc * base_fee
     dbase_fee = base_fee * (gasc_prev / eip1559_target  -  1) * eip1559_const
     
     dvars = [dS_buy, dS_sell, dS_staked, dbase_fee, dprice]        
@@ -63,7 +63,7 @@ def get_params(nblocks:int, dt:float) -> dict[str, float|Callable]:
               'yield_curve': lambda staked: 2.6 / math.sqrt(staked) * U.dimless,
               'gas_consumed_this_block': lambda t: _gas[t // dt],
               'gas_consumed_last_block': lambda t: _gas[max(0, t // dt - 1)],
-              'gas_price_ETH': lambda x, base_fee: max(600, base_fee) * U.gwei,
+              'gas_price_ETH': lambda x, base_fee: max(400, base_fee) * U.gwei,
               'expected_inflation_function': lambda x: x}
     return params
     
