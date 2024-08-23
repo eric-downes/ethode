@@ -5,3 +5,6 @@ pint
 ipython
 pytest
 matplotlib
+brainpy
+taichi
+pydantic

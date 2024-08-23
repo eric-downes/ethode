@@ -19,7 +19,7 @@ class ODEIterMngr(IterationManager[EPB]):
 
     
 class ODESimMngr(SimulationManager[EPB]):
-    time_range: range = np.arange(0, 1000, 1e-3)
+    time_range: range = (0, 1000)
     dt: float = 1e-3
     init_conds: Vars[EPB] = tuple(x * U.ETH for x in (0, .3, .7, 0, 0, 0))
 
@@ -50,14 +50,14 @@ class ESAFcnMngr(BaseModel):
     def push_stake(self, *args) -> tuple[EPB, EPB]:
         return 0, 0
     def trading_volume_fees(self, v, t) -> tuple[EPB, EPB]:
-        dB = (self.it.dB := self._burn(fees := (v[C_idx] / 100) ** 2))
+        self.it.dB = (dB := self._burn(fees := (v[C_idx] / 100) ** 2))
         return fees - dB, -fees
 
     
 class ODEModel[EPB](ETHModel):
     def odesim(self):
         out = [self.sim.init_conds]
-        for t in self.sim.time_range:
+        for t in range(*self.sim.time_range, self.sim.dt):
             out.append( scipy.integrate.odeint(
                 self.iterate, out[-1], [t, t + self.sim.dt], self))
         return out

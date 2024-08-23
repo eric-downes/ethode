@@ -1,5 +1,6 @@
-from future import __annotations__
+from __future__ import annotations
 from functools import partial
+from typing import TypeVar
 
 import brainpy # SDE
 import numpy as np
@@ -22,9 +23,9 @@ class IterationManager[T](BaseModel):
     def init(self, v:Vars[T], t:Num) -> None: pass
     def sum_deltas(self) -> Vars[T]: pass
 
-    
+
 class SimulationManager[T](BaseModel):
-    time_range: range|np.array
+    time_range: tuple[Num, Num]
     dt: Num
     init_conds: Vars[T]
 
@@ -53,9 +54,9 @@ class ETHModel[T](BaseModel):
 
         # no tx fees
         self.fcn.fees_off()
-        self.it.dW['issuance'] = self.fcn.issuance(v,t))
-        self.it.dC['pop_unstake'] = self.fcn.exit_unstaking_queue(v,t))
-        self.it.dS['pop_stake'] = self.fcn.exit_staking_queue(v,t))
+        self.it.dW['issuance'] = self.fcn.issuance(v,t)
+        self.it.dC['pop_unstake'] = self.fcn.exit_unstaking_queue(v,t)
+        self.it.dS['pop_stake'] = self.fcn.exit_staking_queue(v,t)
 
         # tx fees; start collecting fees
         # all following calculations will generate fees implicitly
