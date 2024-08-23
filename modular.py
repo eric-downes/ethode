@@ -24,18 +24,35 @@ class Flow(BaseModel):
     def _validate_(self) -> Flow:
         a = self.internal_function.__annotations__.copy()
         assert len(ret := a.pop('return')) == len(self.targets)
-        
+        return self
+
+
+class DYDT(BaseModel):
+    # we are going to generate these, so should do strict tyoe checking
+    # that the equation agrees with the model its a part of
+    variable_types: tuple[type,...]
+    output_type: type
+    param_types: dict[str, type]
+    function: Callable
+    discrete_time: bool = False
+    @model_validator(mode='after')
+    def _fcn_sig_check_(self) -> DYDT:
+        a = self.function.__anotations__.copy()
+        assert a.pop('return') == self.output_type
+        assert a.pop('time') == int if self.discrete_time else float
+        for (aname, atyp), vtyp in zip(a.items(), variable_types):
+            if vtyp:
+                assert atyp == vtyp 
+            pass
         for n, in a.pop('return'):
-            
-            
-        assert len(self.sources) = 
+            pass            
     def to_term_dict(self) -> dict[Node, Terms]:
         d = {}
         for src in self.sources:
-            
+            pass
             
         
-        
+'''        
                  
     
     
@@ -103,29 +120,6 @@ class Operad: pass
 class CoOperad: pass
 
 
-    
-
-
-class Model:
-    def __init__(self,
-                 boxes):
-
-class 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-'''
 def pend(y, t, b, c):
     theta, omega = y
     dydt = [omega, -b*omega - c*np.sin(theta)]
@@ -138,8 +132,4 @@ sol = odeint(pend, y0, t, args=(b, c))
 def model(variables: tuple[tuple|float], time: float,
           params: dict[str, Callable | float]) -> tuple:
 
-
-
-def model(variables: tuple[tuple|float], time: float,
-          params: dict[str, Callable | float]) -> tuple:
 '''

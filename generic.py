@@ -10,6 +10,7 @@ T = TypeVar('T')
 Num = float|int
 Vars = tuple[T,T,T,T,T]
 
+
 class IterationManager[T](BaseModel):
     # simplest, when everything is a number instead of a distribution
     dW: dict[str,T] = {}
