@@ -1,14 +1,14 @@
+from pydantic_pint import PydanticPintQuantity as PPQuantity
 import pint
 
 from generic import *
 
-
 Unit = TypeVar('Unit', bound = pint.Unit)
+Quantity = pint.Quantity
 U = pint.UnitRegistry()
 U.load_definitions('eth_units.txt')
 
-EPB = U.ETH / U.block
-
+EPB = Annotated[Quantity, PPQuantity("EPB", ureg = U)]
 
 class ODEIterMngr(IterationManager[EPB]):
     def sum_deltas(self) -> Vars[EPB]:

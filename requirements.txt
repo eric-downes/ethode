@@ -8,3 +8,4 @@ matplotlib
 brainpy
 taichi
 pydantic
+pydantic-pint
