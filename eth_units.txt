@@ -9,7 +9,7 @@ Gwei = 10 ** 9 * wei = gewi = shannon = nano_eth = nETH
 micro_eth = 10 ** -6 * eth = uETH = szabo = microeth
 milli_eth = 10 ** -3 * eth = mETH = finney = millieth 
 
-block = 1 * Block
+Block = 1 * block
 EPB = ETH / block
 
 gas_target = 15e6 / block
