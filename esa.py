@@ -1,8 +1,19 @@
+from __future__ import annotations
+from typing import TypeVar, Annotated, Generic
+from dataclasses import dataclass
+from functools import partial
+
 from pydantic_pint import PydanticPintQuantity as PPQuantity
-from typing import Annotated, Generic
+from pydantic import BaseModel, Field, model_validator
+from scipy.integrate import odeint
+import numpy as np
+import brainpy # SDE
 import pint
 
-from generic import *
+
+T = TypeVar('T')
+Num = float|int
+Vars = tuple[T,T,T,T,T,T]
 
 Unit = TypeVar('Unit', bound = pint.Unit)
 Quantity = pint.Quantity
@@ -13,110 +24,127 @@ EPB = Annotated[Quantity, PPQuantity("EPB", ureg = U)]
 Blk = Annotated[Quantity, PPQuantity("Block", ureg = U)]
 ETH = Annotated[Quantity, PPQuantity("ETH", ureg = U)]
 
-class ESAItMngr(BaseModel):
-    _uq: list[T] = [0]
-    _sq: list[T] = [0]
-    @property
-    def variables(self) -> tuple[str,...]:
-        return ('W','S','C','Qs','Qu','B')
-    @property
-    def params(self) -> dict[str, Num]:
-        return {'rnvst': .6, 'burn': .02})
-    @model_validate
-    def _val_(self) -> ESAItMngr
+@dataclass
+class SimulationManager:
+    t_start: Num
+    t_stop: Num
+    dt: Num
+    init_conds: Vars[Num]
+
+class IterationManager: pass
+
+class ESAItMngr(IterationManager):
+    def __init__(self, params: dict[str, Num]):
+        self._uq: list[T] = [0]
+        self._sq: list[T] = [0]
+        self.params = params
+        self.variables = {v:i for i,v in enumerate(('W','S','C','Qs','Qu','B'))}
+        self.dvars = {}
         for vstr in self.variables:
-            setattr(self, 'd' + vstr, {})
-        return self
-    def sum_deltas(self) -> Vars[T]:
-        s = []
-        for d in self.variables:
-            s.append(sum(getattr(self, d).values(), start = 0))
-        return tuple(s)
-    def _burn(self, x:Num) -> Num:
-        return self.params['burn'] * x
-    @staticmethod
-    def issuance(staked:ETH) -> EPB:
-        return math.sqrt(staked)
-    def fees_off(self) -> None: pass
+            dv = 'd' + vstr
+            self.dvars[dv] = {}
+            setattr(self, dv, self.dvars[dv])
+        
+    def burn(self, x:Num) -> Num:
+        return self.params['burn'] * x        
+
+    def init(self, *args) -> None: pass
+    def fees_off(self, *args) -> None: pass
+
+    def issuance(self, v:Vars[float], t:float) -> float:
+        return np.sqrt(v[self.variables['S']])
+    def pop_unstaking_q(self, *args) -> float:
+        return self._uq.pop() if self._uq else 0
+    def pop_staking_q(self, *args) -> float:
+        return self._sq.pop() if self._sq else 0
     def fees_on(self, *args) -> None: pass
-    def push_stake(self, *args) -> tuple[EPB, EPB]:
-        return 0, 0
-    def pop_unstake(self, *args) -> EPB:
-        return self._uq.pop()
-    def pop_stake(self, *args) -> EPB:
-        return self._sq.pop()
-    def withdraw(self, W:ETH) -> tuple[EPB, EPB]:
-        self.dB['burn'] += (dB := self._burn(W))
+    
+    def withdraw(self, v:Vars[float], t:float) -> tuple[float, float]:
+        W = v[self.variables['W']]
+        self.dB['wdraw'] = (dB := self.burn(W))
         return -W, W - dB
-    def reinvest(self, wdraw:ETH) -> tuple[EPB, EPB]:
+    def reinvest(self, v:Vars[float], t:float) -> tuple[float, float]:
+        wdraw = abs(self.dC['wdraw'])
         negdC = self.params['rnvst'] * wdraw
-        self.dB['rnvst'] = (dB := self._burn(negdC))
+        self.dB['rnvst'] = (dB := self.burn(negdC))
         return negdC - dB, -negdC
-    def trading_volume_fees(self, v, t) -> tuple[EPB, EPB]:
-        self.it.dB = (dB := self._burn(fees := (v[C_idx] / 100) ** 2))
+    def push_staking_q(self, v:Vars[float], t:float) -> tuple[float, float]:
+        return 0, 0
+    def push_unstaking_q(self, v:Vars[float], t:float) -> tuple[float, float]:
+        return 0, 0
+
+    def trading_volume_fees(self, v:Vars[float], t:float) -> tuple[float, float]:
+        C_idx = self.variables['C']
+        self.dB['vol'] = (dB := self.burn(fees := (v[C_idx] / 100) ** 2))
         return fees - dB, -fees
 
+    def sum_deltas(self) -> Vars[T]:
+        s = []
+        for d in self.dvars.values():
+            s += [sum(d.values(), start = 0)]
+        return tuple(s)
 
-class ETHModel[T](BaseModel):
-    params: dict[str, float]
-    sim: SimulationManager
-    it: IterationManager
+
+
+class ETHModel:
+    def __init__(self,
+                 sim: SimulationManager,
+                 it: IterationManager):
+        self.it = it
+        self.sim = sim
+        
+    def odesim(self):
+        sim = self.sim
+        out = odeint(func = self.iterate,
+                     y0 = self.sim.init_conds,
+                     t = np.arange(sim.t_start, sim.t_stop, sim.dt),
+                     args = (self.it,))
+        return out
+    
     @staticmethod
-    def iterate(self, v:Vars[T], t:float):
+    def iterate(v:Vars[float], t:float, it:tuple[IterationManager]):
 
+        W, S, C, Qs, Qu, B = v
+        
         # setup this iteration
-        self.it.init(v,t)
+        it.init(v, t)
 
         # no tx fees
-        self.fcn.fees_off()
-        self.it.dW['issuance'] = self.fcn.issuance(v,t)
-        self.it.dC['pop_unstake'] = self.fcn.exit_unstaking_queue(v,t)
-        self.it.dS['pop_stake'] = self.fcn.exit_staking_queue(v,t)
+        it.fees_off()
+        it.dW['issuance'] = it.issuance(v, t)
+        it.dC['pop_unstake'] = it.pop_unstaking_q(v, t)
+        it.dS['pop_stake'] = it.pop_staking_q(v, t)
 
         # tx fees; start collecting fees
         # all following calculations will generate fees implicitly
         # some of ea flow is burnt (p.it.dB++) according to p.fcn
         # and remainder of ea flow goes to p.it.dW awaiting withdrawal
-        self.fcn.fees_on(v,t)
+        it.fees_on(v, t)
         
         # withdraw staking rewards into circulating ETH
-        self.it.dW['wdraw'], self.it.dC['wdraw'] = self.fcn.withdraw(v,t)
+        it.dW['wdraw'], it.dC['wdraw'] = it.withdraw(v, t)
         # add staking reinvestment to staking queue
-        self.it.dQs['reinvest'], self.it.dC['reinvest'] \
-            = self.fcn.reinvest(,t)
+        it.dQs['reinvest'], it.dC['reinvest'] = it.reinvest(v, t)
         # FIFO staking queue
-        self.it.dC['push_stake'], self.it.dQs['push_stake'] \
-            = self.fcn.push_stake(v, t)
+        it.dC['push_stake'], it.dQs['push_stake'] = it.push_staking_q(v, t)
+        # FIFO unstaking queue
+        it.dS['push_unstake'], it.dQu['push_unstake'] = it.push_unstaking_q(v, t)
 
         # trading volume
-        self.it.dW['vol'], self.it.dC['vol'] \
-            = self.fcn.trading_volume_fees(v,t)
+        it.dW['vol'], it.dC['vol'] = it.trading_volume_fees(v, t)
 
         # calculate the totals and return
-        return self.it.sum_deltas()
+        return it.sum_deltas()
 
-    
-class ODETHModel(ETHModel):
-    def odesim(self):
-        out = [self.sim.init_conds]
-        for t in range(*self.sim.time_range, self.sim.dt):
-            out.append( scipy.integrate.odeint(
-                self.iterate, out[-1], [t, t + self.sim.dt], self))
-        return out
     
     
 if __name__ == '__main__':
-    esa_sim_mngr = SimulationManager(
-        block_minmax = (0 * U.EPB, 1000 * U.EPB),
+    sim = SimulationManager(
+        t_start = 0,
+        t_stop = 10,
         dt = 1e-3,
-        init_conds = tuple(x * U.ETH for x in (0,.3,.7,0,0,0)),
+        init_conds = tuple(x for x in (0,.3,.7,0,0,0)),
     )
-    it = ODEIterMngr()
-    params = 
-    esa = ODETHModel[EPB](
-        sim = esa_sim_mngr, 
-        it = it,
-        fcn = ESAFcnMngr(
-            
-            it = it))
+    it = ESAItMngr(params = {'rnvst': .6, 'burn': .02})
+    esa = ETHModel(sim = sim, it = it)
     out = esa.odesim()
