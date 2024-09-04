@@ -31,8 +31,22 @@ class SimulationManager:
     dt: Num
     init_conds: Vars[Num]
 
-class IterationManager: pass
-
+class IterationManager:
+    def __init__(self, params: dict[str, T]): pass
+    def burn(self, *args, **kwargs) -> T: pass
+    def init(self, *args, **kwargs) -> None: pass
+    def fees_off(self, *args, **kwargs) -> None: pass    
+    def issuance(self, v:Vars[T], t:T) -> T: pass
+    def pop_unstaking_q(self, *args, **kwargs) -> T: pass
+    def pop_staking_q(self, *args, **kwargs) -> T: pass
+    def fees_on(self, *args, **kwargs) -> None: pass
+    def withdraw(self, v:Vars[T], t:T) -> tuple[T,T]: pass
+    def reinvest(self, v:Vars[T], t:T) -> tuple[T,T]: pass
+    def push_staking_q(self, v:Vars[T], t:T) -> tuple[T, T]: pass
+    def push_unstaking_q(self, v:Vars[T], t:T) -> tuple[T, T]: pass
+    def trading_volume_fees(self, v:Vars[T], t:T) -> tuple[T, T]: pass
+    def sum_deltas(self) -> Vars[T]: pass
+        
 class ESAItMngr(IterationManager):
     def __init__(self, params: dict[str, Num]):
         self._uq: list[T] = [0]
@@ -46,10 +60,7 @@ class ESAItMngr(IterationManager):
             setattr(self, dv, self.dvars[dv])
         
     def burn(self, x:Num) -> Num:
-        return self.params['burn'] * x        
-
-    def init(self, *args) -> None: pass
-    def fees_off(self, *args) -> None: pass
+        return self.params['burn'] * x
 
     def issuance(self, v:Vars[float], t:float) -> float:
         return np.sqrt(v[self.variables['S']])
@@ -57,7 +68,6 @@ class ESAItMngr(IterationManager):
         return self._uq.pop() if self._uq else 0
     def pop_staking_q(self, *args) -> float:
         return self._sq.pop() if self._sq else 0
-    def fees_on(self, *args) -> None: pass
     
     def withdraw(self, v:Vars[float], t:float) -> tuple[float, float]:
         W = v[self.variables['W']]
@@ -78,7 +88,7 @@ class ESAItMngr(IterationManager):
         self.dB['vol'] = (dB := self.burn(fees := (v[C_idx] / 100) ** 2))
         return fees - dB, -fees
 
-    def sum_deltas(self) -> Vars[T]:
+    def sum_deltas(self) -> Vars[float]:
         s = []
         for d in self.dvars.values():
             s += [sum(d.values(), start = 0)]
