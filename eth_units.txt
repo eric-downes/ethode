@@ -11,6 +11,7 @@ milli_eth = 10 ** -3 * eth = mETH = finney = millieth
 
 Block = 1 * block
 EPB = ETH / block
+PB = 1 / block
 
 gas_target = 15e6 / block
 gas_max = 30e6 / block
