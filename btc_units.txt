@@ -1,4 +1,4 @@
-btc = BTC = Bitcoin
+btc = [Bitcoin] = BTC
 max_btc = 20_999_999.9769 * btc = MaxBTC = algorithmic_max_btc
 mega_btc = 1_000_000 * btc = Mbtc = MBTC
 kilo_btc = 1_000 * btc = kbtc = kBTC
