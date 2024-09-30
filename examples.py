@@ -6,33 +6,38 @@ from simple import *
 
 # simple ESC model
 
-ETHx3 = (Units['ETH'], Units['ETH'], Units['ETH'])
+PB = Units['PB']
+ETH = Units['ETH']
+PE = 1 / ETH
+EPB = Units['EPB']
+Dless = Units['']
+Block = Units['Block']
+Price = Units['PriceETHUSD']
+
+def ETHx(n:int) -> tuple[ETH,...]:
+    return (ETH, ) * n
 
 @dataclass
 class SimpleParams(Params):
-    r: Units.dimensionless # staking reinvestment fraction in (0,1)
-    f: Units.EPB # tx fees apy
-    y: Units.EPB # issuance apy
-    e: Units.ETH = 1 * Units.ETH
+    r: float # staking reinvestment fraction in (0,1)
+    f: EPB # tx fees apy
+    y: EPB # issuance apy
+    e: ETH = 1 * ETH
     
 @dataclass
 class SimpleESU(ODESim):
     @staticmethod
-    def test(v:tuple[*ETHx3],
-             t:Units.Block,
-             tol:float = 1e-12) -> bool:
+    def test(v:ETHx(3), t:Block, tol:float = 1e-12) -> bool:
         E,S,U = v
         troo = all(E > 0) & all(S > 0) & all(U > 0)
         troo &= all(abs(E - S - U) < tol)
         return troo
     @staticmethod
-    @Units.wraps(ETHx3, (ETHx3, Units['block'], Units.dimensionless))
-    def func(v:tuple[Units.ETH, Units.ETH, Units.ETH],
-             t:Units.Block,
-             p:Params) -> tuple[Units.ETH, Units.ETH, Units.ETH]:
+    @Units.wraps(ETHx(3), (ETHx(3), Block, Dless))
+    def func(v:EWTHx(3), t:Block, p:Params) -> ETHx(3):
         E,S,U = v
         dE = p.y * np.sqrt(p.e / S) * S
-        fees = p.f * (U / p.e) ** 2
+        fees = p.f * (U / p.e)
         profit = dE + fees
         dS = p.r * profit
         dU = (1 - p.r) * profit - fees
@@ -43,16 +48,16 @@ class SimpleESU(ODESim):
 @dataclass
 class ComplexESU(SimpleESU):
     @staticmethod
-    def func(v:tuple[Units.ETH, Units.ETH, Units.ETH],
-             t:Units.Block,
-             p:Params) -> tuple[Units.ETH, Units.ETH, Units.ETH]:
+    @Units.wraps(ETHx(3), (ETHx(3), Block, Dless))
+    def func(v:ETHx(3), t:Block, p:Params) -> ETHx(3):
         # load variables into a dict
         d = {k:v for k,v in zip(('E','S','U'), v)}
+        E,S,U = v
         d['t'] = t
         # compute functions
         r = p.renvst(**d)
         f = p.fees(**d)
-        dE = p.issuance(**d) * S
+        dE = p.yield_curve(**d) * S
         profit = dE + f
         dS = r * profit
         dU = (1 - r) * profit - f
@@ -61,80 +66,71 @@ class ComplexESU(SimpleESU):
 # .. w/ quadratic trading
 
 @dataclass
-class QuadTradingParams(Params):
-    def issuance(self, S: Units.ETH, **kwargs) -> Units.ETH:
+class LinearTradingParams(Params):
+    def yield_curve(self, S: ETH, **kwargs) -> ETH:
         return self.y * np.sqrt(self.e / S)
-    def fees(self, U: Units.ETH, **kwargs) -> Units.ETH:
-        return self.f * (U / self.e) ** 2
-    def renvst(self, **kwargs) -> Units.EPB:
+    def fees(self, U: ETH, **kwargs) -> ETH:
+        return self.f * (U / self.e)
+    def renvst(self, **kwargs) -> EPB:
         return self.r
 
 # ... w/ linear trading
 
 @dataclass
-class LinTradingParams(QuadTradingParams):
-    def fees(self, U: Units.ETH, **kwargs) -> Units.ETH:
-        return self.f * (U / self.e)
-
-@dataclass
-class KineticTradingParams(QuadTradingParams):
-    k: Units.ETH = 2 ** 10 * Units.ETH
-    def fees(self, U: Units.ETH, **kwargs) -> Units.ETH:
+class KineticTradingParams(LinearTradingParams):
+    k: ETH = 2 ** 10 * ETH
+    def fees(self, U: ETH, **kwargs) -> ETH:
         u = U / self.e
         k = self.k / self.e
         return self.f * u ** 2 /(u + k)
 
-### ESCB
+# change yield curve
 
 @dataclass
-class ESCB(ODESim):
+class AndersCurveParams(LinearTradingParams):
+    k: PE = 1 / ETH
+    def yield_curve(self, S: ETH, **kwargs) -> ETH:
+        return self.y * np.sqrt(self.e / S / (1 + self.k * S))
+
+    
+### ESCB
+
+InflData = (Price, ) + ETHx(5)
+
+@dataclass
+class InflSim(ODESim):
     @staticmethod
-    def test(v:tuple[Units.ETH, Units.ETH, Units.ETH, Units.ETH],
-             t:Units.Block,
-             tol:float = 1e-12) -> bool:
-        E,S,C,B = v
-        troo = all(E > 0) & all(S > 0) & all(C > 0) & all(B > 0)
-        troo &= all(abs(E - S - C - B) < tol)
-        return troo
-    @staticmethod
-    def func(v:tuple[Units.ETH, Units.ETH, Units.ETH, Units.ETH],
-             t:Units.Block,
-             p:Params) -> tuple[Units.ETH, Units.ETH, Units.ETH, Units.ETH]:
+    @Units.wraps(InflData, (InflData, Block, Dless))
+    def func(v:InflData, t:Block, p:Params) -> ETHx(4):
         # load variables into a dict
-        d = {k:v for k,v in zip(('E','S','C','B'), v)}
+        d = {k:v for k,v in zip(('P','E','S','L','C','B'), v)}
+        P,E,S,L,C,B = v
         d['t'] = t
         # compute functions
-        r = p.renvst(**d)
-        f_tot, f_burned = p.fees(**d)
-        f_reward = f_tot - f_burned
+        tot_fees, solo_pfees, lsp_pfees = p.fees(**d)
+        burned_fees = tot_fees - solo_pfees - lsp_pfees
         # compute derivatives
-        dE = p.issuance(**d) * S
-        profit = dE + f_reward
-        dS = r * profit
-        dC = (1 - r) * profit - f_tot
-        dB = f_burned
-        return dE, dS, dC, dB
+        dP = (p.dlog_utility(**d) - p.dlog_supply(**d)) * P
+        dE = (y := p.yield_curve(**d)) * (S + L)
+        dS = y * S + solo_pfees - (K := p.usd_cost(**d) / P)
+        dL = (r := p.lsp_renvst(**d)) * (lsp_rev := y * L + lsp_pfees)
+        dC = K + (1 - r) * lsp_rev - tx_fees
+        dB = burned_fees
+        return dP, dE, dS, dL, dC, dB
     
 @dataclass
 class ESCBParams(Params):
-    r: Units.dimensionless # staking reinvestment fraction in (0,1)
-    f: Units.PB # tx fees apy
-    y: Units.PB # issuance apy
-    b: Units.dimensionless # burn
-    c: Units.EPB = 0 * Units.EPB # cost
-    e: Units.ETH = 1 * Units.ETH # sets scale for dimless calc
-    k: Units.ETH = 1 * Units.ETH # michaelis-menton-like parameter
-    def issuance(self, S: Units.ETH, **kwargs) -> Units.PB:
-        return self.y * np.sqrt(self.e / S)
-    def renvst(self, **kwargs) -> Units.dimensionless:
-        i = self.issuance(**kwargs)
-        return self.r * (one - (self.c / i).to('')) 
-    def fees(self, C: Units.ETH, **kwargs) -> tuple[Units.EPB, Units.EPB]:
-        fees = self.f * C * C / (C + self.k)
-        return fees, self.burned(fees, **kwargs)
-    def burned(self, fees: Units.EPB, **kwargs) -> Units.EPB:
-        return self.b * fees
-
+    def fees(self, **kwargs) -> ETHx(3):
+        tot_fees, solo_pfees, lsp_pfees = p.fees(**d)
+        burned_fees = tot_fees - solo_pfees - lsp_pfees
+        # compute derivatives
+        dP = (p.dlog_utility(**d) - p.dlog_supply(**d)) * P
+        dE = (y := p.yield_curve(**d)) * (S + L)
+        dS = y * S + solo_pfees - (K := p.usd_cost(**d) / P)
+        dL = (r := p.lsp_renvst(**d)) * (lsp_rev := y * L + lsp_pfees)
+        dC = K + (1 - r) * lsp_rev - tx_fees
+        dB = burned_fees
+        return dP, dE, dS, dL, dC, dB
 
 '''
 class QESCB(ESCB):

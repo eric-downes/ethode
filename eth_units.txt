@@ -1,4 +1,7 @@
+USD = [Dollars]
 eth = [Ether] = ETH
+PriceETHUSD = USD / ETH
+
 kETH = 1000 * ETH = keth = kilo_eth
 METH = 10 ** 6 * ETH = mega_eth
 GETH = 10 ** 9 * ETH = giga_eth
