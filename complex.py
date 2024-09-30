@@ -10,6 +10,7 @@ import numpy as np
 import brainpy # SDE
 import pint
 
+from simple import *
 
 T = TypeVar('T')
 Num = float|int
@@ -23,6 +24,7 @@ U.load_definitions('eth_units.txt')
 EPB = Annotated[Quantity, PPQuantity("EPB", ureg = U)]
 Blk = Annotated[Quantity, PPQuantity("Block", ureg = U)]
 ETH = Annotated[Quantity, PPQuantity("ETH", ureg = U)]
+SimFunc = Callable[[tuple[Q, ...], Sequence[Num], Params], tuple[Q, ...]]
 
 @dataclass
 class SimulationManager:
@@ -158,3 +160,54 @@ if __name__ == '__main__':
     it = ESAItMngr(params = {'rnvst': .6, 'burn': .02})
     esa = ETHModel(sim = sim, it = it)
     out = esa.odesim()
+
+
+@dataclass
+class ESCBParams(Params):
+    def fees(self, **kwargs) -> ETHx(3):
+        tot_fees, solo_pfees, lsp_pfees = p.fees(**d)
+        burned_fees = tot_fees - solo_pfees - lsp_pfees
+        # compute derivatives
+        dP = (p.dlog_utility(**d) - p.dlog_supply(**d)) * P
+        dE = (y := p.yield_curve(**d)) * (S + L)
+        dS = y * S + solo_pfees - (K := p.usd_cost(**d) / P)
+        dL = (r := p.lsp_renvst(**d)) * (lsp_rev := y * L + lsp_pfees)
+        dC = K + (1 - r) * lsp_rev - tx_fees
+        dB = burned_fees
+        return dP, dE, dS, dL, dC, dB
+
+
+@dataclass
+class Params: pass
+
+@dataclass
+class ODESim(Sim):
+    func: SimFunc
+    ic: tuple[Q, ...]
+    tinfo: tuple[Num, ...]
+    params: Params
+    def sim(self) -> list[tuple[Q, ...]]:
+        return odeint(func = self.func,
+                      y0 = self.ic,
+                      t = np.arange(*self.tinfo),
+                      args = params)
+    def update(self, vin:tuple[Q, ...], tin: tuple[Num]): pass
+
+class MixedSim:
+    mngr: SimMngr
+    def mixed_sim(self) -> list[tuple[Num,...], tuple[Num,...]]:
+        with self.mngr() as m:
+            while m.simulating():
+                con, dis = m.next_step()
+                m.update( con.sim() )
+                m.update( dis.sim() )
+        return m.vs, m.ts
+
+class SimMngr:
+    disfcn: SimFcn
+    confcn: SimFcn
+    vs: list[tuple[Q, ...]]
+    ts: tuple[Num, ...]
+    def simulating(self) -> bool: pass
+    def next_step(self) -> tuple[Sim, Sim]: pass
+    def update(self) -> None: pass

@@ -1,6 +1,13 @@
 import numpy as np
 
-from alternate import ESCBParams, ESCB
+from examples import *
+
+ESU_y0 = ComplexESU(
+    ic = 
+    tinfo: tuple[Num, Num, Num]
+    params: Params
+    
+
 
 y = 1
 fs = [10, 7.5, 5, 2.5, 2, 1.5, 1.25, 1, .9, .75, .5, .25, .1, .01]
@@ -12,10 +19,10 @@ for f in fs:
     for r in rs:
         for b in bs:
             print(f'starting {(y,f,r,b)}')            
-            escb = ESCB(
-                ic = (1, .3, .6, .1),
+            escb = CompelxESU(
+                ic = (1, .3, .7),
                 tinfo = (0, 10**4, 1),
-                params = ESCBParams(r,f,y,b))
+                params = (r,f,y,b))
             data[(r,f,y,b)] = escb.sim()
 
 ends = {}
