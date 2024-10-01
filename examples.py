@@ -78,7 +78,7 @@ class LinFeeParams(Params):
         return self.r
 
 # build on top of previous models
-    
+
 @dataclass
 class KineticFeeParams(LinFeeParams):
     k: ETH = 2 ** 10 * ETH
@@ -115,7 +115,7 @@ class InflSim(ODESim):
         # compute derivatives
         dP = (p.dlog_utility(**d) - p.dlog_supply(**d)) * P
         dE = (y := p.yield_curve(**d)) * (S + L)
-        dS = y * S + solo_pfees - (K := p.usd_cost(**d) / P)
+        dS = y * S + solo_pfees - (k := p.val_cost(**d))
         dL = (r := p.lsp_renvst(**d)) * (lsp_rev := y * L + lsp_pfees)
         dC = K + (1 - r) * lsp_rev - tx_fees
         dB = burned_fees
@@ -123,6 +123,7 @@ class InflSim(ODESim):
     
 @dataclass
 class InflParams(Params):
+    def supply(self, **kwargs) -> ETH: pass
     def tot_fees_mev(self, **kwargs) -> EPB: pass
     def burned_fees(self, tot_fees:EPB, **kwargs) -> EPB: pass
     def split_post_burn(self, post_burn_fees: EPB, **kwargs) -> EPBx(2): pass
@@ -135,6 +136,33 @@ class InflParams(Params):
 
 # Inflation, supply = E
 # uses "on paper inflation" rather than circulating ETH
+
+@dataclass
+class EInflParams(InflParams):
+    e: ETH = 1 * ETH
+    fees_per_eth: PB = .1 * PB
+    burn_fraction: float = .01
+    mev_advantage: float = .5
+    anders_constant: ETH = 2**25 * ETH
+    def supply(self, E:ETH, **kwargs) -> ETH:
+        return E
+    def tot_fees_mev(self, **kwargs) -> EPB:
+        return self.fees_per_eth * self.C
+    def burned_fees(self, tot_fees:EPB, **kwargs) -> EPB:
+        return self.burn_fraction * tot_fees
+    def split_post_burn(self, post_burn_fees: EPB, **kwargs) -> EPBx(2):
+        m = self.mev_advantage
+        return tuple(np.r_[m, 1 - m] * post_burn_fees)
+    def yield_curve(self, S:ETH, L:ETH, **kwargs) -> PB:
+        staked = S + L
+        return self.y * np.sqrt(self.e / staked)
+    def val_cost(self, **kwargs) -> USD:
+        return self.fixed_cost
+    def lsp_renvst(self, **kwargs) -> Dless: pass
+    def lsp_pfees(self, **kwargs) -> EPB: pass
+    def dlog_utility(self, **kwargs) -> PB:
+        
+    def dlog_supply(self, **kwargs) -> PB: pass
 
 # Infl supply = C;
 # strict "inflation = expansion of unstaked raw ETH"
