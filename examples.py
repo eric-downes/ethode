@@ -6,19 +6,21 @@ from simple import *
 
 # simple ESC model
 
-PB = Units['PB']
-ETH = Units['ETH']
+PB = Units.PB
+ETH = Units.ETH
 PE = 1 / ETH
-EPB = Units['EPB']
-Dless = Units['']
-Block = Units['Block']
-Price = Units['PriceETHUSD']
+EPB = Units.EPB
+Dless = Units.dimensionless
+Block = Units.Block
+Price = Units.PriceETHUSD
 
 def ETHx(n:int) -> tuple[ETH,...]:
-    return (ETH, ) * n
+    x = (ETH, ) * n
+    return tuple[*x]
 
 def EPBx(n:int) -> tuple[EPB,...]:
-    return (EPB, ) * n
+    x = (EPB, ) * n
+    return tuple[*x]
 
 # Simple hard-coded functions
 
@@ -38,8 +40,7 @@ class SimpleESU(ODESim):
         troo &= all(abs(E - S - U) < tol)
         return troo
     @staticmethod
-    @Units.wraps(ETHx(3), (ETHx(3), Block, Dless))
-    def func(v:EWTHx(3), t:Block, p:Params) -> ETHx(3):
+    def func(v:ETHx(3), t:Block, p:Params) -> ETHx(3):
         E,S,U = v
         dE = p.y * np.sqrt(p.e / S) * S
         fees = p.f * (U / p.e)
@@ -53,7 +54,6 @@ class SimpleESU(ODESim):
 @dataclass
 class ComplexESU(SimpleESU):
     @staticmethod
-    @Units.wraps(ETHx(3), (ETHx(3), Block, Dless))
     def func(v:ETHx(3), t:Block, p:Params) -> ETHx(3):
         # load variables into a dict
         d = {k:v for k,v in zip(('E','S','U'), v)}
@@ -93,7 +93,52 @@ class AndersCurveParams(LinFeeParams):
     def yield_curve(self, S: ETH, **kwargs) -> ETH:
         return self.y * np.sqrt(self.e / S / (1 + self.k * S))
 
+### ESCB
 
+@dataclass
+class ESCB(ODESim):
+    @staticmethod
+    def test(v:ETHx(4), t:Block, tol:float = 1e-12) -> bool:
+        E,S,C,B = v
+        troo = all(E > 0) & all(S > 0) & all(C > 0) & all(B > 0)
+        troo &= all(abs(E - S - C - B) < tol)
+        return troo
+    @staticmethod
+    def func(v:ETHx(4), t:Block, p:Params) -> ETHx(4):
+        # load variables into a dict
+        E, S, C, B = v
+        d = {k:v for k,v in zip(('E','S','C','B'), v)}
+        d['t'] = t
+        # compute functions
+        r = p.renvst(**d)
+        f_tot, f_burned = p.fees(**d)
+        f_reward = f_tot - f_burned
+        # compute derivatives
+        dE = p.issuance(**d) * S
+        profit = dE + f_reward
+        dS = r * profit
+        dC = (1 - r) * profit - f_tot
+        dB = f_burned
+        return dE, dS, dC, dB
+    
+@dataclass
+class ESCBParams(Params):
+    r: float
+    f: PB
+    y: PB
+    b: float
+    e: ETH = 1
+    def issuance(self, S: ETH, **kwargs) -> PB:
+        return self.y * np.sqrt(self.e / S)
+    def renvst(self, **kwargs) -> float:
+        return self.r
+    def fees(self, C: ETH, **kwargs) -> tuple[EPB, EPB]:
+        fees = self.f * C
+        return fees, self.burned(fees, **kwargs)
+    def burned(self, fees: EPB, **kwargs) -> EPB:
+        return self.b * fees
+
+    
 ### Inflation model w/ price
 
 InflData = (Price, ) + ETHx(5)
