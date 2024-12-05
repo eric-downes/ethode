@@ -1,4 +1,7 @@
-eth = 1 * Ether = ETH 
+USD = [Dollars]
+eth = [Ether] = ETH
+PriceETHUSD = USD / ETH
+
 kETH = 1000 * ETH = keth = kilo_eth
 METH = 10 ** 6 * ETH = mega_eth
 GETH = 10 ** 9 * ETH = giga_eth
@@ -9,16 +12,16 @@ Gwei = 10 ** 9 * wei = gewi = shannon = nano_eth = nETH
 micro_eth = 10 ** -6 * eth = uETH = szabo = microeth
 milli_eth = 10 ** -3 * eth = mETH = finney = millieth 
 
-block = 1 * Block
+block = [BlockIncrement] = Block
+EPB = ETH / block
+PB = 1 / block
 
 gas_target = 15e6 / block
 gas_max = 30e6 / block
 gas_std = 3e5 / block 
 # std estimated by eyeballing Ycharts
 
-slots = validator_slots = slot
-epoch = 32 * slots
-ave_slot_time = 12 * sec / slot
-ave_epoch = epoch * ave_slot_time
+epoch = 32 * block
+ave_block_time = 12 * s / block
+ave_epoch_time = ave_block_time * epoch
 base_reward_factor = 64 * ETH / epoch
-
