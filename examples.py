@@ -13,14 +13,16 @@ EPB = Units.EPB
 Dless = Units.dimensionless
 Block = Units.Block
 Price = Units.PriceETHUSD
+USD = Units.USD
 
-def ETHx(n:int) -> tuple[ETH,...]:
-    x = (ETH, ) * n
-    return tuple[*x]
+def _tuple_units(t:type, n:int, i:tuple = (), f:tuple = ()) -> tuple[type,...]:
+    return i + (t, ) * n + f
 
-def EPBx(n:int) -> tuple[EPB,...]:
-    x = (EPB, ) * n
-    return tuple[*x]
+def ETHx(n:int, i:tuple = (), f:tuple = ()) -> tuple[ETH,...]:
+    return _tuple_units(ETH, n, i, f)
+
+def EPBx(n:int, i:tuple = (), f:tuple = ()) -> tuple[ETH,...]:
+    return _tuple_units(EPB, n, i, f)
 
 # Simple hard-coded functions
 
@@ -107,7 +109,7 @@ class ESCB(ODESim):
     def func(v:ETHx(4), t:Block, p:Params) -> ETHx(4):
         # load variables into a dict
         E, S, C, B = v
-        d = {k:v for k,v in zip(('E','S','C','B'), v)}
+        d = {k:x for k,x in zip(('E','S','C','B'), v)}
         d['t'] = t
         # compute functions
         r = p.renvst(**d)
@@ -133,6 +135,8 @@ class ESCBParams(Params):
     def renvst(self, **kwargs) -> float:
         return self.r
     def fees(self, C: ETH, **kwargs) -> tuple[EPB, EPB]:
+        print(self.f)
+        print(C)
         fees = self.f * C
         return fees, self.burned(fees, **kwargs)
     def burned(self, fees: EPB, **kwargs) -> EPB:
@@ -141,12 +145,11 @@ class ESCBParams(Params):
     
 ### Inflation model w/ price
 
-InflData = (Price, ) + ETHx(5)
+InflData = ETHx(5, (Price, ))
 
 @dataclass
 class InflSim(ODESim):
     @staticmethod
-    @Units.wraps(InflData, (InflData, Block, Dless))
     def func(v:InflData, t:Block, p:Params) -> ETHx(4):
         # load variables into a dict
         d = {k:v for k,v in zip(('P','E','S','L','C','B'), v)}
@@ -205,10 +208,6 @@ class EInflParams(InflParams):
         return self.fixed_cost
     def lsp_renvst(self, **kwargs) -> Dless: pass
     def lsp_pfees(self, **kwargs) -> EPB: pass
-    def dlog_utility(self, **kwargs) -> PB:
-        
+    def dlog_utility(self, **kwargs) -> PB: pass        
     def dlog_supply(self, **kwargs) -> PB: pass
-
-# Infl supply = C;
-# strict "inflation = expansion of unstaked raw ETH"
 
