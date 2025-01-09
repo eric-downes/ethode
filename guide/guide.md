@@ -1,18 +1,4 @@
----
-layout: post
-title: Ethereum Macroecononomics and `ethode`
-author: Eric Downes
-categories: [ethereum, issuance]
-excerpt: This is an introductory blog post on differential equtions
-for ethereum in a series summarizing research generously funded by the
-Ethereum Foundation.
-usemathjax: true
-thanks: I am grateful for useful discussions with Eric Siu, Andrew
-Sudbury, Angsar Dietrichs, and the the 20 Squares team, especially
-Danieli Palombi and Philipp Zahn.
----
-
-# Five Posts on Ethereum Macroeconomics
+# Dynamical Systems and Ethereum Macroeconomics
 
 Several prominent Ethereum community members, and research projects
 supported by the Ethereum Foundation, have raised the concerning
