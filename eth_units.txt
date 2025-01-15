@@ -25,3 +25,5 @@ epoch = 32 * block
 ave_block_time = 12 * s / block
 ave_epoch_time = ave_block_time * epoch
 base_reward_factor = 64 * ETH / epoch
+year = 7174 * block
+Yr = year

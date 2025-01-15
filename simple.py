@@ -1,8 +1,9 @@
 from __future__ import annotations
 from typing import TypeVar, Annotated, Generic, Callable, Sequence
 from dataclasses import dataclass, make_dataclass
+from math import sqrt
 
-from scipy.integrate import odeint
+from scipy.integrate import solve_ivp
 import numpy as np
 import pint
 
@@ -45,9 +46,7 @@ class Params:
             yield k, getattr(self, k), f
     def _functions(self) -> Iterator[tuple[str, Callable]]:
         for k, v in self.__dict__.items():
-            if k[0] != '_' and \
-               k not in self.__dataclass_fields__ and \
-               callable(v):
+            if k[0] != '_' and callable(v):
                 yield k, v
     def _non_dim_args(self) -> dict[str, Num]:
         idata = {}
@@ -68,18 +67,19 @@ class Params:
 @dataclass
 class Sim:
     ic: tuple[Q, ...]
-    tinfo: tuple[Q, Q, Q]
+    tspan: tuple[Q, Q]
     params: Params
     def sim(self) -> list[tuple[Q, ...]]: pass
     def test(self, tol:float = 1e-12) -> bool: pass
     @staticmethod
-    def func(v:tuple[Q,...], t:Q, p:Params) -> bool: pass
+    def func(t:Q, v:tuple[Q,...], p:Params) -> bool: pass
     
 @dataclass
 class ODESim(Sim):
     def sim(self) -> list[tuple[Q, ...]]:
-        return odeint(func = wmag(self.func),
-                      y0 = mag(self.ic),
-                      t = mag(np.arange(*self.tinfo)),
-                      args = self.params._non_dim_args())
+        ts = (mag(self.tinfo[0]), mag(self.tinfo[1]))
+        return solve_ivp(func = wmag(self.func),
+                         y0 = mag(self.ic),
+                         tspan = mag(self.tspan)
+                         args = (self.params,))
 
