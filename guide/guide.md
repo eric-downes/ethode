@@ -1,91 +1,27 @@
-# Dynamical Systems and Ethereum Macroeconomics
+# Dynamical Systems for Ethereum
 
-Several prominent Ethereum community members, and research projects
-supported by the Ethereum Foundation, have raised the concerning
-possibiity that too much inflation could lead to runaway staking and
-governance centralization.  In an attempt to resolve these issues, the
-issuance "yield" curve has come into prominence as an obvious lever to
-reduce inflation, thereby also reducing hidden costs to users.  These
-are important concerns for us, and we see a very different picture.
-In what follows we will try to share this view, and tools supporting
-it.
-
-## Terse Summary for Very Impatient People
-
-In [this post](2024-12-30-ethereum-macro.md) we derive a basic
-dynamics model, and use it in the posts that follow to reach
-conclusions partially at odds with other researchers, highlighted
-below.  We review some dynamical systems concepts as we do so, with
-code examples in [ethode](https://github.com/20squares/ethodesim) a
-thin units-aware wrapper we built around [scipy's
-odeint](https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.odeint.html).
-Wishing to preserve $$d$$ for the differential and use intuitive
-symbols, our variable names throughout these posts are not standard;
-[here]() is a script to bring this post's markdown roughly inline with
-that of [issuance.wtf](https://issuance.wtf).
-
-[Our second post](2024-12-30-inflation-staking.md) covers the medium
-term future of Ether.  We find only two means to support a moderate
-equilibrium staking fraction $s^\star$.  The first, unlikely and
-undesirable, is via persistent stake slashing and staking business
-churn.  The second is "LI;ELF" conditions: a low but positive
-inflation rate $\alpha$ exceeding fee fraction $f$.  The average
-reinvestment ratio $r$ is a close lower bound for the staking
-equilibrium, with the excess depending on inflation vs fees;
-$s^\star\approx r^\star+\delta(f^\star/\alpha^\star)$.
-
-Sufficient irreplaceable demand for raw ether, staking business
-overhead, and validator profit-taking all exert a downward pressure on
-$r$, allowing a moderated $s$ at medium time scales, given sufficient
-inflation.  However, the long term future of ethereum is deflationary
-with high likelihood, and the irreplaceable demand for raw ether we
-find is relatively low, so in the very long term we expect
-$s^\star\approx1-\epsilon$ for some small positive $\epsilon$.  If
-anything, decreasing issuance is likely to *speed* the rate at which
-$s\to 1-\epsilon$ occurs, not prevent it.
-
-Turning to governance centralization in our third post, we frame the
-familiar "winner takes all" observation about LSPs as: businesses
-sustaining the highest reinvestment ratio $r$ eventually dominate
-staking.  There is enough synergy in the business plans between L2s
-and LSTs that we expect these to vertically integrate.  So the likely
-far future of ethereum we can see is: raw ether is used primarily for
-settlement of L2 rollups, with staking dominated either by (a) the
-largest LST / CEX staker, capturing governance, or (b) a confederation
-of L2s coupled to main-net LSTs.  We are not optimistic that a
-reduction in issuance will avert this future; if it does, solo stakers
-are subsidizing the protocol.
-
-So what to do...  In a fourth post we propose a framework for
-evaluating macoreconomic interventions, such as a change to the
-issuance yield curve, using ideas from bifurcation theory, with
-`ethode` examples.  Our fifth and final post will sketch a
-mechanism which optimistically might provide anti-oligopoly pressures
-within an L2 confederation.  We also list some open questions at that
-time.
-
-# Dynamical Systems, Very Briefly
-
-Some proof-of-stake blockchains, like [Stellar](), target a fixed
-inflation rate.  We'll model that first to introduce basics.  We
-then imagine a blockchain, "Phlogistoneum" with Ethereum's issuance
-curve, but no burn, and investigate the inflation rate of this
-imaginary chain.  Throughout we develop the basics of dynamical systems
-and give some code examples you can play with.
+Some proof-of-stake blockchains, like [Stellar](https://stellar.org/),
+target a fixed inflation rate.  We'll model that first to introduce
+basics.  We then imagine a blockchain, "Phlogistoneum" with Ethereum's
+issuance curve, but no burn, and investigate the inflation rate of
+this imaginary chain.  Throughout we develop the basics of dynamical
+systems and give some code examples you can play with.
 
 This is not a tutorial, but we have tried to make it as accessible as
 possible.  We believe dynamical systems and numerical suites like
-`scipy` are the right tools for modeling Ethereum macoreconomics,
-and the conversation would significantly benefit from their use.  When
-we started this research, we actually did not set out to propose a new
-model, but we were led to it by the use of these tools.
+`scipy` are the right tools for modeling Ethereum macoreconomics, and
+the conversation would significantly benefit from their use.  When we
+started this research, we actually did not set out to propose a new
+model or contend/debate any of the conventional wisdom, we just
+wannted to understand what the hell was going on.  We were led to
+our model of Ethereum dynamics by the use of these tools.
 
 ## Pre-requisites
 
-We use python code examples.  They are not strictly
-necessary but if you want to understand/use them, you'll need basic
-facility with a python prompt (recommend [ipython/jupyter]()) and to
-to install [ethode]().  The first few chapters of [this
+We use python code examples.  They are not strictly necessary but if
+you want to understand/use them, you'll need basic facility with a
+python prompt; we recommend [ipython/jupyter](https://ipython.org/).
+The first few chapters of [this
 book](https://www.amazon.com/Python-Data-Analysis-Wrangling-IPython/dp/1491957662/)
 cover the background skills.
 
@@ -118,9 +54,23 @@ The *fixed point* $$x^\star$$, corresponding to when $\Delta_t
 x:=x_{t+1}-x_t=0$ is $x^\star=0$.  That fixed point is *stable* (a
 sink) when small *perturbations* $x=x^\star+\epsilon$ shrink, and
 *unstable* (a source) when they grow.  Here is some code, implementing
-this system in `scipy.odeint` and `ethode` when $k$ is constant.
+this system in `ethode` when $k$ is constant.
 
-ETHODE
+```python
+from ethode import *
+@dataclass
+class ExpParams(FinDiffParams):
+    k: 1/Yr = .01
+@dataclass
+class ExpSim(FinDiffSim):
+    params:Params = field(default_factory = ExpParams)
+    @staticmethod
+    def func(t:Yr, v:ETH, p:Params) -> ETH/Yr:
+        return p.k * v
+```
+
+So much code for such a simple equation!  For more complicated systems
+though, the overhead works for us.
 
 The condition for stability (perturbations grow) is $k>0$, and for
 instability $k<0$.  (The special value $k=0$ corresponds to a *center*
@@ -134,15 +84,15 @@ bankrupt; $x_t=x_0*(1+k)^{t/\tau_b}\approx
 x_0+\frac{k}{\tau_b}x_0+\ldots$.  The smaller $$k$$ is compared to 1,
 the more exact this approximation becomes.
 
-You may have noticed that in defi nearly everything is quoted in
-terms of APY.  What then are we to make of some FRAX:LUNA liquidity
-pool on [beefy.fi](htts://beefy.fi), promising 3000\% APY?  Such
-ludicrous numbers, always self-denominated, are at best projections
-based on the current $$\frac{\Delta_t x}{x_t}$$.  You may have had the
-experience that such things often decrease over time.  So before we
-get too bent out of shape about a rate of return or a rate of
-inflation, it is wise to consider the global constraints on this
-quantity; how will $$k$$ change over time?
+You may have noticed that in defi nearly everything is quoted in terms
+of APY.  What then are we to make of some ZOMG:FCKR liquidity pool on
+[beefy.fi](htts://beefy.fi), promising 3000\% APY?  Such ludicrous
+numbers, always self-denominated, are at best projections based on the
+current $$\frac{\Delta_t x}{x_t}$$.  You may have had the experience
+that such things often decrease over time.  So before getting too bent
+out of shape about a rate of return or a rate of inflation, it is wise
+to consider the global constraints on this quantity; how will $$k$$
+change over time?
 
 ### Not-Constant Inflation
 
@@ -151,10 +101,20 @@ some unknown variable rate.  For simplicity just write $$\kappa:=kx$$, and
 remember that $\kappa$ has a zero at $x=0$.
 
 $$\displaystyle
-x_{t+\tau}=x_t+\kappa(x_t,t,\tau,\ldots)
+x_{t+\tau_b}=x_t+\kappa(x_t,t,\tau_b,\ldots)
 $$
 
-ETHODE
+```python
+@dataclass
+class VarExpParams(ExpParams):
+    def kappa(self, x:ETH, **kwargs) -> ETH/Yr: pass
+@dataclass
+class VarExpSim(FinDiffSim):
+    params:FinDiffParams = field(default_factory = VarExpParams)
+    @staticmethod
+    def func(t:Yr, x:ETH, p:Params) -> ETH/Yr:
+        return p.kappa(t = t, x = x) * x
+```
 
 We have made explicit a dependence on $\tau_b$; see below.  Hopefully
 it is clear that any point $x^\star=0$ where $\kappa(x^\star)$ is zero
@@ -173,7 +133,7 @@ before $k(\kappa^\star+\epsilon)<\kappa(x^\star)=0$.
 
 When $$\kappa$$ is arbitrary it might jump around quite a bit in
 response to small perturbations.  If we do not have enough details
-about $\kappa$ to satisfy, [time averaging]() over some
+about $\kappa$ to satisfy, time averaging over some
 $\tau\gg\tau_{b}$ might help, otherwise there is not much more that
 can be said at this level of generality.  However when $$k$$ seems to
 vary smoothly we can hope to use calculus.  To dangerously abridge the
@@ -208,28 +168,22 @@ of one-dimensional systems in which the $$\epslion$-term of the
 expansion of $\kappa$ is not forced to be zero, act like exponential
 growth/decay, at least initially.
 
-
-example of a non-constant rate -- use Ether.
-
-
 ### A Phlogistoneum Phairy Tale
 
 Let's make this more concrete.  Consider a proof-of-stake
 cryptocurrency "Phlogistoneum" with total issued currency $$P$$ of
-which a fixed fraction $$v$$ is validating transactions.  Perhaps
+which a fixed fraction $$S$$ participates in consensus.  Perhaps
 validators are chosen via popularity contest, or they compete for
 spots in an auction to buy the core devs lambos; anyway at least for
-now $$v=V/P$$ is fixed; $$\dot{v}=0$$.
+now $$s=S/P$$ is fixed; $$\dot{s}=0$$.
 
 Phlogistoneum's devs are incredibly lazy so naturally they copy
 Ethereum's blocktime and present-day issuance curve
-$$y(V)=y_1/\sqrt{V}$$, where $$y_1$$ is constant.  So:
+$$y(S)=y_1/\sqrt{S}$$, where $$y_1$$ is constant.  So:
 
 $$\displaystyle
-\dot{P}=y(V)V = (y_1\sqrt{v})\cdot\sqrt{P}
+\dot{P}=y(V)V = y_1\sqrt{v/P}\cdot P
 $$
-
-ETHODE
 
 It's quite clear that the only fixed point for Phlogistoneum supply
 occurs basically at or just-before the genesis block, and that this is
