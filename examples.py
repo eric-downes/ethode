@@ -1,48 +1,138 @@
-from simple import *
+from ethode import *
 
-#############################
-# CONTENT BELOW
-#############################
-
-# simple ESC model
-
-PB = Units.PB
-ETH = Units.ETH
-PE = 1 / ETH
-EPB = Units.EPB
-Dless = Units.dimensionless
-Block = Units.Block
-Price = Units.PriceETHUSD
-USD = Units.USD
-
-def _tuple_units(t:type, n:int, i:tuple = (), f:tuple = ()) -> tuple[type,...]:
-    return i + (t, ) * n + f
-
-def ETHx(n:int, i:tuple = (), f:tuple = ()) -> tuple[ETH,...]:
-    return _tuple_units(ETH, n, i, f)
-
-def EPBx(n:int, i:tuple = (), f:tuple = ()) -> tuple[ETH,...]:
-    return _tuple_units(EPB, n, i, f)
-
-# Simple hard-coded functions
+'''
+You can define params separately, in case you want to use the same
+parameters in different models.
+'''
 
 @dataclass
-class SimpleParams(Params):
-    r: float # staking reinvestment fraction in (0,1)
-    f: EPB # tx fees apy
-    y: EPB # issuance apy
-    e: ETH = 1 * ETH
+class ConstParams(Params):
+    y1: 1/Yr = 166.3 #1/Yr is a unit (pint quantity type)
+    b: One = 5e-1  # One is "dimensionaless" having no units
+    f: 1/Yr = 8e-3 # use units in annotation but *always assign pure int|float*
+    j: 1/Yr = 1e-5 
+    r: One = .65
+    qs: 1/Yr = 1e-4
+    qu: 1/Yr = 1e-4
+    s1: ETH = 1   # pedantic so sqrt is dimless
+    def yld(self, S:ETH, **kwargs) -> 1/Yr:
+        return self.y1 * np.sqrt(self.s1 / S)
+
+'''
+Things are intended to be as modular as possible.
+Here is (my understanding of) Anders Elowsson's fav yield curve,
+the new `AndersParams` inherits the old `ConstParams`
+https://ethresear.ch/t/properties-of-issuance-level-consensus-incentives-and-variability-across-potential-reward-curves/18448
+'''
+
+@dataclass
+class AndersParams(ConstParams):
+    y1: 1/Yr = 166.3 * 100 / 64
+    k: 1/ETH = 2**(-11)
+    def yld(self, S:ETH, **kwargs) -> ETH:
+        return self.y1 * np.sqrt(self.s1 / S / (1 + self.k * S))
+    
+'''
+Beware!  Params always have a default set of (possibly terrible)
+initial conditions.  You probably want to update your base params with
+different `init_conds` and `tspan` as below.
+
+Right now `solve_ivp` picks time points to plot, which might not be
+enough to make pretty plots.
+'''
     
 @dataclass
-class SimpleESU(ODESim):
-    @staticmethod
-    def test(v:ETHx(3), t:Block, tol:float = 1e-12) -> bool:
-        E,S,U = v
-        troo = all(E > 0) & all(S > 0) & all(U > 0)
-        troo &= all(abs(E - S - U) < tol)
+class SUConstParams(ConstParams):
+    init_conds: ETH_Data = (('S', 120e6 * .3), ('U', 120e6 * .7))
+    tspan: tuple[Yr, Yr] = (0, 100)
+@dataclass
+class SUConstSim(ODESim):
+    # std pattern to get around initialization by py interp
+    # we want a separate copy of Params() for each sim instance
+    params: Params = field(default_factory = SUConstParams)
+    @staticmethod # always need this: scipy wants a specific signature
+    def func(t:Yr, v:tuple[ETH, ETH], p:Params) -> tuple[ETH/Yr, ETH/Yr]:
+        # self.params is passed as "p"
+        S, U = v
+        dS = (p.r * (y := p.yld(S)) - p.j - p.qu) * S + \
+            ((rf := p.r * p.f) * (1 - p.b) + p.qs) * U
+        dU = ((1 - p.r) * y + p.qu) * S - \
+            (rf + (1 - p.r) * p.b * p.f + p.qs) * U
+        return dS, dU
+su = SUConstSim()
+su.sim() # su.df contains the data, su.out contains metadata 
+
+"""
+`@output` literally just adds an attribute to the method so we know to
+include it as a column in the dataframe `su.df`
+
+A practice you may want to adopt if you have many dynamic vars is to
+define e.g. `def sfrac(self, S:ETH, U:ETH, **kwargs) -> One:` instead;
+then you can unpack vars inside `func` using a dictionary `val_dict`
+and calculate sfrac using `p.sfrac(**val_dict)
+"""
+
+@dataclass
+class SUaConstParams(SUConstParams):
+    @output
+    def sfrac(self, S:ETH, U:ETH) -> One:
+        return S / (S + U)
+    @output
+    def alpha(self, S:ETH, U:ETH) -> 1/Yr:
+        s = self.sfrac(S,U)
+        return self.yld(S) * s - self.b * self.f * (1 - s) - self.j * s
+@dataclass
+class SUaConstSim(SUConstSim):
+    params: Params = field(default_factory = SUaConstParams)
+su_a = SUaConstSim()
+su_a.sim()
+
+"""
+you will inherit the other variables, but can always define new ones
+
+MegaBurn is maybe a misleading name, the burn isn't that high here.
+It's post mega-burn, which is something made up to get high inflation.
+"""
+
+@dataclass
+class MegaBurnParams(SUaConstParams):
+    init_conds: ETH_Data = (('S', 1.2e6 * .4), ('U', 1.2e6 * .6))
+    tspan: tuple[Yr, Yr] = (0, 200)
+    b: One   = 1e-3
+    qs: 1/Yr = 2e-1
+@dataclass
+class MegaBurnSim(SUaConstSim):
+    params: Params = field(default_factory = MegaBurnParams)
+zomg = MegaBurnSim()
+zomg.sim()
+
+"""
+you can define custom tests
+to sanity check your model and atb least catch stupid mistakes
+hopefully more to come on this... would like to automate
+unit sanity-checking without screwing up scipy internals
+"""
+
+@dataclass
+class BurnlessParams(Params):
+    r: One = .5 # staking reinvestment fraction in (0,1)
+    f: 1/Yr = .002 # tx fees apy
+    y: 1/Yr = 166.3 # issuance apy
+    e: ETH = 1
+    init_conds: (('E', 100), ('S', 30), ('U', 70))
+    
+@dataclass
+class Burnless(ODESim):
+    params: Params = field(default_factory = BurnlessParams)
+    def test(self, tol:float = 1e-12) -> bool:
+        self.sim()
+        df = self.df
+        E,S,U = df.E, df.S, df.U
+        troo = (E > 0).all() & (S > 0).all() & (U > 0).all()
+        troo &= (abs(E - S - U) < tol).all()
         return troo
     @staticmethod
-    def func(v:ETHx(3), t:Block, p:Params) -> ETHx(3):
+    def func(t:Yr, v:tuple[ETH,ETH,ETH], p:Params) -> ETH_Data:
         E,S,U = v
         dE = p.y * np.sqrt(p.e / S) * S
         fees = p.f * (U / p.e)
@@ -51,109 +141,35 @@ class SimpleESU(ODESim):
         dU = (1 - p.r) * profit - fees
         return dE, dS, dU
         
-# Modular functions
+"""
+A sketch of a Price Inflation model w/ price and LSTs distinguished from solo
+"""
+USD = U.USD
+Price = U.USD / ETH
+InflData = tuple[*(ETH,)*5, Price]
+DInfl = tuple[*(ETH/Yr,)*5, Price/Yr]
+EPY = ETH/Yr
 
 @dataclass
-class ComplexESU(SimpleESU):
-    @staticmethod
-    def func(v:ETHx(3), t:Block, p:Params) -> ETHx(3):
-        # load variables into a dict
-        d = {k:v for k,v in zip(('E','S','U'), v)}
-        E,S,U = v
-        d['t'] = t
-        # compute functions
-        r = p.renvst(**d)
-        f = p.fees(**d)
-        dE = p.yield_curve(**d) * S
-        profit = dE + f
-        dS = r * profit
-        dU = (1 - r) * profit - f
-        return dE, dS, dU
-
-@dataclass
-class LinFeeParams(Params):
-    def yield_curve(self, S: ETH, **kwargs) -> ETH:
-        return self.y * np.sqrt(self.e / S)
-    def fees(self, U: ETH, **kwargs) -> ETH:
-        return self.f * (U / self.e)
-    def renvst(self, **kwargs) -> EPB:
-        return self.r
-
-# build on top of previous models
-
-@dataclass
-class KineticFeeParams(LinFeeParams):
-    k: ETH = 2 ** 10 * ETH
-    def fees(self, U: ETH, **kwargs) -> ETH:
-        u = U / self.e
-        k = self.k / self.e
-        return self.f * u ** 2 /(u + k)
-
-@dataclass
-class AndersCurveParams(LinFeeParams):
-    k: PE = 1 / ETH
-    def yield_curve(self, S: ETH, **kwargs) -> ETH:
-        return self.y * np.sqrt(self.e / S / (1 + self.k * S))
-
-### ESCB
-
-@dataclass
-class ESCB(ODESim):
-    @staticmethod
-    def test(v:ETHx(4), t:Block, tol:float = 1e-12) -> bool:
-        E,S,C,B = v
-        troo = all(E > 0) & all(S > 0) & all(C > 0) & all(B > 0)
-        troo &= all(abs(E - S - C - B) < tol)
-        return troo
-    @staticmethod
-    def func(v:ETHx(4), t:Block, p:Params) -> ETHx(4):
-        # load variables into a dict
-        E, S, C, B = v
-        d = {k:x for k,x in zip(('E','S','C','B'), v)}
-        d['t'] = t
-        # compute functions
-        r = p.renvst(**d)
-        f_tot, f_burned = p.fees(**d)
-        f_reward = f_tot - f_burned
-        # compute derivatives
-        dE = p.issuance(**d) * S
-        profit = dE + f_reward
-        dS = r * profit
-        dC = (1 - r) * profit - f_tot
-        dB = f_burned
-        return dE, dS, dC, dB
-    
-@dataclass
-class ESCBParams(Params):
-    r: float
-    f: PB
-    y: PB
-    b: float
-    e: ETH = 1
-    def issuance(self, S: ETH, **kwargs) -> PB:
-        return self.y * np.sqrt(self.e / S)
-    def renvst(self, **kwargs) -> float:
-        return self.r
-    def fees(self, C: ETH, **kwargs) -> tuple[EPB, EPB]:
-        print(self.f)
-        print(C)
-        fees = self.f * C
-        return fees, self.burned(fees, **kwargs)
-    def burned(self, fees: EPB, **kwargs) -> EPB:
-        return self.b * fees
-
-    
-### Inflation model w/ price
-
-InflData = ETHx(5, (Price, ))
+class InflParams(Params):
+    def tot_fees_mev(self, **kwargs) -> EPY: pass
+    def burned_fees(self, tot_fees:EPY, **kwargs) -> EPY: pass
+    def split_post_burn(self, post_burn_fees: EPY, **kwargs) -> (EPY,)*2: pass
+    def dlog_utility(self, **kwargs) -> 1/Yr: pass
+    def dlog_supply(self, **kwargs) -> 1/Yr: pass
+    def yield_curve(self, **kwargs) -> 1/Yr: pass
+    def usd_val_cost(self, **kwargs) -> USD: pass
+    def lsp_rnvst(self, **kwargs) -> One: pass
+    def lsp_pfees(self, **kwargs) -> EPY: pass
 
 @dataclass
 class InflSim(ODESim):
+    params: Params = field(default_factory = InflParams)    
     @staticmethod
-    def func(v:InflData, t:Block, p:Params) -> ETHx(4):
+    def func(t:Yr, v:InflData, p:Params) -> DInfl:
         # load variables into a dict
-        d = {k:v for k,v in zip(('P','E','S','L','C','B'), v)}
-        P,E,S,L,C,B = v
+        d = {k:v for k,v in zip(('P','E','S','L','U','O'), v)}
+        P,E,S,L,U,O = v
         d['t'] = t
         # compute fees
         tx_fees = p.tot_fees_mev(**d)
@@ -163,51 +179,8 @@ class InflSim(ODESim):
         # compute derivatives
         dP = (p.dlog_utility(**d) - p.dlog_supply(**d)) * P
         dE = (y := p.yield_curve(**d)) * (S + L)
-        dS = y * S + solo_pfees - (k := p.val_cost(**d))
-        dL = (r := p.lsp_renvst(**d)) * (lsp_rev := y * L + lsp_pfees)
-        dC = K + (1 - r) * lsp_rev - tx_fees
-        dB = burned_fees
-        return dP, dE, dS, dL, dC, dB
-    
-@dataclass
-class InflParams(Params):
-    def supply(self, **kwargs) -> ETH: pass
-    def tot_fees_mev(self, **kwargs) -> EPB: pass
-    def burned_fees(self, tot_fees:EPB, **kwargs) -> EPB: pass
-    def split_post_burn(self, post_burn_fees: EPB, **kwargs) -> EPBx(2): pass
-    def dlog_utility(self, **kwargs) -> PB: pass
-    def dlog_supply(self, **kwargs) -> PB: pass
-    def yield_curve(self, **kwargs) -> PB: pass
-    def usd_val_cost(self, **kwargs) -> USD: pass
-    def lsp_renvst(self, **kwargs) -> Dless: pass
-    def lsp_pfees(self, **kwargs) -> EPB: pass
-
-# Inflation, supply = E
-# uses "on paper inflation" rather than circulating ETH
-
-@dataclass
-class EInflParams(InflParams):
-    e: ETH = 1 * ETH
-    fees_per_eth: PB = .1 * PB
-    burn_fraction: float = .01
-    mev_advantage: float = .5
-    anders_constant: ETH = 2**25 * ETH
-    def supply(self, E:ETH, **kwargs) -> ETH:
-        return E
-    def tot_fees_mev(self, **kwargs) -> EPB:
-        return self.fees_per_eth * self.C
-    def burned_fees(self, tot_fees:EPB, **kwargs) -> EPB:
-        return self.burn_fraction * tot_fees
-    def split_post_burn(self, post_burn_fees: EPB, **kwargs) -> EPBx(2):
-        m = self.mev_advantage
-        return tuple(np.r_[m, 1 - m] * post_burn_fees)
-    def yield_curve(self, S:ETH, L:ETH, **kwargs) -> PB:
-        staked = S + L
-        return self.y * np.sqrt(self.e / staked)
-    def val_cost(self, **kwargs) -> USD:
-        return self.fixed_cost
-    def lsp_renvst(self, **kwargs) -> Dless: pass
-    def lsp_pfees(self, **kwargs) -> EPB: pass
-    def dlog_utility(self, **kwargs) -> PB: pass        
-    def dlog_supply(self, **kwargs) -> PB: pass
-
+        dS = y * S + solo_pfees - (K := p.usd_val_cost(**d))
+        dL = (r := p.lsp_rnvst(**d)) * (lsp_rev := y * L + lsp_pfees)
+        dU = K + (1 - r) * lsp_rev - tx_fees
+        dO = burned_fees
+        return dP, dE, dS, dL, dU, dO
