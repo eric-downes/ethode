@@ -80,20 +80,52 @@ class Params(AutoDefault):
 @dataclass
 class Sim(AutoDefault):
     params: Params
+    df: pd.DataFrame = None
+    def sim(self) -> None: pass
+    def test(self, tol:float = 1e-12) -> bool: pass
+    @staticmethod
+    def func(t:Q, v:tuple[Q,...], p:Params) -> tuple[Q,...]: pass
+    def _graph(self) -> None: pass
     def _output_fcns(self) -> Iterator[Callable]:
         for name in dir(self):
             if callable(f := getattr(self, name)) and \
                getattr(f, 'is_output', False):
                 yield f
-    def sim(self) -> tuple[pd.DataFrame, OdeResult]: pass
-    def test(self, tol:float = 1e-12) -> bool: pass
-    @staticmethod
-    def func(t:Q, v:tuple[Q,...], p:Params) -> tuple[Q,...]: pass
+    def _add_outputs(self) -> None:
+        df = self.df
+        colset = set(df.columns)
+        for f in self._output_fcns():
+            while (fname := f.__name__) in df.columns:
+                fname += '_'
+            df[fname] = df[list(colset.intersection(
+                f.__code__.co_varnames))].apply(
+                    lambda row: f(**row), axis=1)
+
+@dataclass
+class FinDiffParams(Params):
+    dt: Yr = 1
+    
+@dataclass
+class FinDiffSim(Sim):
+    params: FinDiffParams
+    def sim(self, graph:tuple[str,...] = None) -> None:
+        p = self.params
+        names, values = zip(*p.init_conds)
+        nt = np.ceil((p.tspan[1] - p.tspan[0])/p.dt)
+        data = np.ndarray(shape = (nt, len(p.init_conds)),
+                          dtype = np.float64)
+        data[0] = values
+        for t in range(1,nt):
+            data[t] = data[t-1] + p.dt * self.func(data[t-1])
+        self.df = pd.DataFrame(data, columns = names)
+        self.df['t'] = np.arange(*p.tspan, p.dt)
+        self._add_outputs()
+        self._graph()
 
 @dataclass
 class ODESim(Sim):
-    def sim(self, graph:tuple[str,...] = None
-            ) -> tuple[pd.DataFrame, Any]:
+    out: OdeResult = None
+    def sim(self, graph:tuple[str,...] = None) -> None:
         p = self.params
         names, values = zip(*p.init_conds)
         out = solve_ivp(fun = wmag(self.func),
@@ -104,12 +136,8 @@ class ODESim(Sim):
         df = pd.DataFrame(out.y.T, columns = names)
         df['t'] = out.t
         colset = set(df.columns)
-        for f in self._output_fcns():
-            while (fname := f.__name__) in df.columns:
-                fname += '_'
-            df[fname] = df[list(colset.intersection(
-                f.__code__.co_varnames))].apply(
-                    lambda row: f(**row), axis=1)
-        self.df = df
         self.out = out
-        return None
+        self.df = df
+        self._add_outputs()
+        self._graph()
+
