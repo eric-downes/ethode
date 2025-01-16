@@ -1,4 +1,4 @@
-# issuance-fundamentals
+# ethode
 
 ## setup
 
