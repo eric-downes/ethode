@@ -172,30 +172,27 @@ growth/decay, at least initially.
 
 Let's make this more concrete.  Consider a proof-of-stake
 cryptocurrency "Phlogistoneum" with total issued currency $$P$$ of
-which a fixed fraction $$S$$ participates in consensus.  Perhaps
+which an amount $$S$$ participating in consensus.  Perhaps
 validators are chosen via popularity contest, or they compete for
 spots in an auction to buy the core devs lambos; anyway at least for
-now $$s=S/P$$ is fixed; $$\dot{s}=0$$.
+now $$0<s=S/P$$ is *fixed*; $$\dot{s}=0$$.
 
 Phlogistoneum's devs are incredibly lazy so naturally they copy
 Ethereum's blocktime and present-day issuance curve
 $$y(S)=y_1/\sqrt{S}$$, where $$y_1$$ is constant.  So:
 
 $$\displaystyle
-\dot{P}=y(V)V = y_1\sqrt{v/P}\cdot P
+\dot{P}=y(S)S = y_1\sqrt{s/P}\cdot P
 $$
 
-It's quite clear that the only fixed point for Phlogistoneum supply
-occurs basically at or just-before the genesis block, and that this is
-an unstable fixed point.  If $$\dot{x}/x=+k$$ above corresponds to a
-constant inflation rate, what then does $$\dot{P}=k\sqrt{P}\ll P$$
-correspond to?
-
-You can simulate it, retain a memory of differential equations class,
-or just take a quick trip to Wolfram Alpha.  In any case, the supply
-and inflation rate $$\dot{P}/P$$ are [graphed below]().  Depsite the
-lack of a burn, the inflation rate of Phlogistoneum supply is
-ever-decreasing.
+The only fixed point for Phlogistoneum supply occurs basically at or
+just-before the genesis block.  Is it stable or unstable?  If
+$$\dot{x}/x=+k$$ above corresponds to a constant inflation rate, what
+then does $$\dot{P}/P=k\sqrt{P}\ll P$$ correspond to?  Depsite the
+lack of a burn, which the devs were much to lazy to bother
+implementing, the inflation rate of Phlogistoneum supply is
+ever-decreasing; simply take the partial derivative
+$\partial\dot{P}/\partial{P}=-y_1\sqrt{s/P}/2$.
 
 If Phlogistoneum smart contracts can support even a very small postive
 APY for users in real terms, wether through money laundering or
@@ -203,82 +200,63 @@ mattress sales, the valuation of their currency supply should
 eventually stabilize.  But can they survive the initial - intermediate
 period of high inflation?  This is a dynamics question!
 
+When $$\kappa$$ is a constant, this reduces to our previous constant
+exponential growth.  Generally we will *not* assume that variables are
+constant, and if we do it will be explicit.  So when in doubt,
+mentally substitute $$a(x,y,z,\ldots)$$ for $$a$$, generally.  We do
+this because we very rarely *know* the "real" equations if such even
+exist; at best we *model* systems... and as we'll see with EIP 1559,
+even when we *do* know something specific, what we know might just
+average out over timescales of interest!  Perhaps surprisingly, we can
+still come to conclusions about these systems.
 
-is a *dynamics* question.
+### More Technical Description for People Who Care
 
+If you have taken analysis and are curious what is going on.  Our
+dynamical variables $\vec{x}$ will always take real values
+$\vec{x}\in\mathbb{R}^d$, fixed points are the points $X^*$ of
+potential equilibrium where the derivatives are equal to zero
+$\dot{X}=0$.
 
+Only the global stable fixed points should be considered valid market
+equilibria.  The easiest method to classify stability is local
+stability.  If a point is locally stable it is globally stable.  Local
+stability is assessed on wether perturbations
+$x=\vec{x}^*+\vec{\epsilon}$ generally grow (unstable) or shrink
+(stable), but for higher dimensional systems it is not sufficient to
+look at each one dimensional map alone.
 
+Fixed points can be moved around by varying parameters, and even
+joined or split, via bifurcations.  However the winding number, which
+measures the amount of divergence or convergence of nearby paths, in
+any sufficiently large region (technically ”open ball”) containing he
+relevant collection of such fixed points, cannot change.  "Relevant"
+here means the ones that will merge, or have separated.
 
-
-Indeed, a quick trip to
-
-Wolfram Alpha
-
-
-We can say a lot more, because the
-Phlogistanis have done us a favor, and their system s exactly
-solvable.  Normally we don't bother, but t serves as a helpful pont of
-comparison. 
-
-
-
-
-
-Let $$E_t^\bullet$$ be all Ether ever brought into existence since the
-Merge in the block $$t$$.  
-
-$$\displaystyle
-\begin{array}
-E_t &=& E_{t-1} + yS_t\\
-$$
-
-If $$y$$ is a constant
-
-
-
-A dynamical system is a set of difference ($$\Delta x$$) or
-differential ($$\dot{x}:=\frac{dx}{dt}$$) equations. In our posts we
-may encounter imaginary and complex values, but these are real
-functions taking real values.  Here is an example
-
-
-\dot{y} &=& b(z-y)\\
-\dot{z} &=& c(y-z)\\
-$$
-
-When $$a$$ is a constant, its not hard to see we can understand the
-first equation independently of the others.  Generally we will *not*
-assume that variables are constant, and if we do it will be explicit.
-So when in doubt, mentally substitute $$a(x,y,z,\ldots)$$ for $$a$$,
-generally.  We do this because we very rarely *know* the "real"
-equations if such even exist; at best we *model* systems... and as
-we'll see with EIP 1559, even when we *do* know something specific,
-what we know might just average out over timescales of interest!
-Perhaps surprisingly, we can still come to conclusions about these
-systems.
-
-Below are a template for the above system in `ethode`.
-
-
-You can replace the desired
-
-We start by ident
-
-
-
-$\frac{dX}{dt}:=\dot{X}=f(X,\ldots)$ 
-
-taking real values $X\in\mathbb{R}^d$, fixed points are the points $X^*$ of potential equilibrium where the derivatives are equal to zero $\dot{X}=0$.  Based on wether perturbations $X=X^*+\vec{\epsilon}$ generally grow or shrink, these fixed points can be classified unstable (grow) or stable (shrink).  Almost always only the stable fixed points should be considered valid market equilibria.  Fixed points can be moved around by varying parameters, and even joined or split, via bifurcations.  However the winding number, which measures the amount of divergence or convergence of nearby paths, in any sufficiently large region (technically ”open ball”) around a collection of such fixed points, cannot change.  
-
-As an immediate consequence of this, if a new fixed point is introduced by varying a parameter, it must first pop into existence as a center point.  Such fixed-points are for instance stable from the left and unstable to the right: an open ball measures no sinks or sources: all paths entering the region, eventually leave, etc. As is common in dynamical systems outside of physics, we do not believe dynamics including center-points model real economic systems.  The reason is that these are not structurally stable to noise: the center point disappears or splits into a source and a sink. We require any economic model to be stable to noise.  Since we further reduce all models in this paper to low-dimensional systems, $d$ = 1 and 2, when classifying fixed points we are considering as potential equilibria, by the real parts of their eigenvalues $\lambda$, there are really only two options: 
+As an immediate consequence of this, if a new fixed point is
+introduced by varying a parameter, it must first pop into existence as
+a center point, with winding number 0.  Such fixed-points are for
+instance stable from the left and unstable to the right: an open ball
+measures no sinks or sources: all paths entering the region,
+eventually leave, etc. As is common in dynamical systems outside of
+physics, we do not believe dynamics including center-points model real
+economic systems.  The reason is that these are not structurally
+stable to noise: the center point disappears or splits into a source
+and a sink. We require any economic model to be stable to noise.
+Since we further reduce all models in this paper to low-dimensional
+systems, $d$ = 1 and 2, when classifying fixed points we are
+considering as potential equilibria, by the real parts of their
+eigenvalues $\lambda$, there are really only two options:
 
 - stable — $Re(\lambda)<0$ AKA sinks, attractors: close trajectories approach, and
 - unstable — $Re(\lambda)>0$ AKA sources, repellors: close trajectories diverge
 
-We have mentioned center points $Re(\lambda)=0$ because their introduction via the Saddle-Node bifurcation represents a kind of “intervention” in a system, and could play an important role in planning the future of Ethereum Issuance.  We have included a section on criteria based on this approach, and hope to have more concrete results for the Final Report.
-
-In our Final Report this section will also be sufficiently expanded, and will comprise much of our devcon presentation.  For now we must assume some basic familiarity with nonlinear dynamics, asymptotic methods, etc. at the level of the first few of Strogatz’ youtube lectures.
-
+We have mentioned center points $Re(\lambda)=0$ because their
+introduction via the Saddle-Node bifurcation represents a kind of
+“intervention” in a system, and could play an important role in
+planning the future of Ethereum Issuance.  We have included a section
+on criteria based on this approach, and hope to have more concrete
+results for the Final Report.
 
 Highly Recommended books in order of increasing difficulty and sophistication if you want to understand this stuff:
 
@@ -288,7 +266,6 @@ Highly Recommended books in order of increasing difficulty and sophistication if
 - Hirsch, Smale and Devaney (2003) [Differential Equations …](https://www.amazon.com/Differential-Equations-Dynamical-Introduction-Mathematics/dp/0123497035/)
 - Bender and Orszag (1997) [Advanced Mathematical Methods for Scientists and Engineers](https://www.amazon.com/Advanced-Mathematical-Methods-Scientists-Engineers/dp/0387989315/)
 - Arnol’d (Ed.) the *Dynamical Systems* Series, esp. V (1994) [Bifurcation and Catastrophe](https://www.amazon.com/Dynamical-Systems-Bifurcation-Encyclopaedia-Mathematical/dp/0387181733/)
-
 
 # Macroeconomics Model
 
@@ -468,7 +445,7 @@ $$\tilde{I}:=I-\bar{I}$$.  Some useful facts we will use.
 So *back in the terminology of the rest of the post* the biggest takeaway is
 
 $$\displaystyle
-\dot{E} = I = yS - \kappa
+\dot{E} = I \approx yS - \kappa \leq yS
 $$
 
 Where $$\kappa$$ is the covariance term.  These considerations will
@@ -655,8 +632,6 @@ $$\dislaystyle
 \end{array}
 $$
 
-ETHODE CODE
-
 ### Test Drive
 
 There is a practical shortcming of the above model that makes analyses
@@ -704,31 +679,7 @@ $(\alpha,s)$, and study the system directly in terms of inflation and
 staking fraction, quantities which have featured prominently in the debates
 around Ethereum macroeconomics.
 
-# Conclusions
-
-Most if not all the questions and ideas we have and will discuss will
-be broadly familiar to anyone in this space.  When we do reach
-different conclusions, it is primarily because we have used different
-tools, those of scientific modeling: python's `scipy` and dynamical
-systems.  Supported by these tools, the broad view that becomes
-accessible is roughly this:
-
-Potential market equilibria are realistic and accessible to analysis
-just when they can be identified with the (possibly meta-)stable fixed
-points of dynamical equations $(\ldots)^\star$.
-
-Leaving these equations implicit, and focusng only on macroeconomic
-arguments about the behavior of market participants risks that more
-fundamental conditions (such as the intermediate-timescale
-relationship between $x^\star$ and $\alpha^\star$) slip into
-blindspots.
-
-
-
-
-
-
-# PostScript: Variables Names and Terminology
+# PostScript: Variables Names and Terminology and Confusion
 
 Using lowercase for dimensionless normalized quantities $$s=S/A$$, and
 greek for their log time-derivatives $$\alpha=\dot{A}/A$$, combined
@@ -739,41 +690,23 @@ differential of $$X$$.  Boo-hiss!  We use $$S$$ for (S)taked.
 
 We use $$S$$ because $$T$$ is probably an even worse choice, and $$K$$
 would mean that $$k$$ was staking fraction, instead of a curve
-constant.  But... Very unfortunately $$S$$ is commonly used for
-what we call "accessible" Ether (s)upply $$A$$, often referred to as
-"circulating ether (s)upply".  Speaking of which, we use "circulating"
-for $$C=A-S$$ because in
-[economics](https://www.investopedia.com/terms/m/moneysupply.asp)
-"circulating money supply" refers to M1: only liquid assets, and not
-M2, which includes things like money market funds: things that take
-time to access.  In our opinion, if it takes 20 days to retrieve your
-staked Ether, then it is not liquid, ergo not "circulating"!  And LSTs
-are *not* (raw) Ether!  That's one of the sticking points behind this
-whole debate... Similarly, we try to always say "issuance yield
-curve", because "yield curve" in common parlance means something
+constant.  But... Very unfortunately $$S$$ is commonly used for what
+we call "accessible" or circulating Ether (s)upply $$A$$.  One
+confusing point is that for fiat "circulating [money
+supply](https://www.investopedia.com/terms/m/moneysupply.asp)" refers
+to M1: only liquid assets, and not M2, which includes things like
+money market funds: things that take time to access.  Probably it is
+best to consider some timescale and specify on which timescale the
+circulating currency has a non-zero velocity of money. Nonetheless, we
+stick with "circulating supply" because that is the dominant usage:
+all tokesn that have been issued but not burnt.  Similarly, we try to
+always say "issuance yield curve", because "yield curve" in common
+parlance means something
 [different](https://www.investopedia.com/terms/y/yieldcurve.asp), more
 related to Compound and Aave than issuance... all that said economics
 isn't great either, using $$\pi$$ for inflation, or $$\dot{Q}_+$$ to
 mean the flow through $$Q_+$$ instead of the time-derivative of
 $$Q_+$$!  Blech!!
-
-Anyway, the entire subject of refering to things using symbols is an
-awful unfixable mess.  In the meantime, here is a `python` script
-which you can use to transform any markdown or text using "$" to
-enclose $\LaTeX$ back and forth from (our estimate of) the
-issuance.wtf terminology to our own highly questionable choices.
-
-```python
-
-```
-
-[Back to our basic model]()
-
-
-
-
-
-
 
 ## The Problem
 
@@ -789,171 +722,18 @@ post we address the first of these concerns.
 
 We use "stock and flow" differential equation models to study Ethereum
 macroeconomics, specifically how changing issuance impacts these
-questions.  We will publish several blog posts on this topic:
+questions.
 
 0. Basics of applying Dynamics to Ethereum
-1. (This post) Will reducing issuance avoid Runaway Staking?
+1. Will reducing issuance avoid Runaway Staking?
 2. Will reducing issuance avoid Governance Centralization?
 3. Other Levers besides Issuance, and a means of evaluating levers.
 4. Conclusions, tools to study and resolve policy debates.
 
-Even if runaway staking does not directly concern you, this post is
+Even if runaway staking does not directly concern you, it is
 essential to understand our view of the interaction between inflation
 and staking, a picture in tension with other research.
 
-
-## TLDR
-
-### For the extraordinarily impatient reader, our conclusions.
-
-* We identify a "low inflation; even lower fees" regime (LI;ELF) in
-  which there the amount of Ether staked is stable and (potentially)
-  less than 100%; $$s^\star<1$$.
-
-* Staking rewards do *not* simply enter circulation. So long as LSTs
-  exist some fraction of these are necessarily "reinvested" in
-  staking at a non-zero ratio $$r$$.
-  -- When LI;ELF persists, the fraction of Ether staked approaches the
-     reinvestment ratio from above.
-  -- Reinvestment can be estimated with onchain data, and its
-     sensitivity to inflation measured with
-     validator surveys.
-
-* Outside of LI;ELF, convergence to a reasonable staking future is not
-  possible.
-  -- Under high deflation, Ethereum faces a choice between zero staking
-     $$s^\star\to0$$ or runaway staking $$s^\star\to1$$.
-  -- Under no growth or low deflation, runaway staking *is inevitable*.
-
-* Within LI;ELF, runaway staking may still occur. If it does *not*,
-  this is because
-  -- (1) inflation is held low enough, that concerns over inflation
-     do not dominate the reinvestment of profits by staking businesses
-     at equilibrium, $$d_\alpha{r}|^\star\leq0$$, but simultaneously
-  -- (2) inflation is held high enough at equilibrium to numerically
-     dominate priority fees and MEV, as a fraction of circulating
-     Ether; $$\alpha^\star\gg f^\star$$.
-
-* The medium term future of ethereum we see is one in which inflation
-  $$\alpha$$, while higher than that prefered by inflation hawks,
-  plays a *positive* role to mediate staking fraction and
-  centralization.  In long $$t\to\infty$$ term, though $$\alpha\to0$$ forcing
-  $$s\to1$$.  We will revisit the consequences of this for Ethereum in
-  a future blog post.
-
-* Given all the above, we advise caution.  Intervening to reeduce the
-  issuance yield curve seems dangerously capable of exaccerbating the
-  very problems we seek to avoid.
-
-### For the moderately impatient reader.
-
-#### Dynamics Supporting Market Equilibrium
-
-In some more detail, a sketch of the reasons behind our conclusions.
-The quantity of most importance to this debate is the staked ETH
-fraction $$s$$, as of Dec 2024 is [roughly
-.28](https://dune.com/queries/1933048/3188490). Staking fraction is
-calculated $$s=S/A$$ where $$S$$ is all staked ETH, $$C$$ is
-"circulating" (unstaked, unburnt) ETH, and $$A=S+C$$ is the total
-"accessible" (unburnt) ETH. Differential changes, such as changes in
-time $$\frac{ds}{dt}:=\dot{s}$$ are given by the quotient rule
-$$\dot{s}=\dot{S}/A-s\dot{A}/A$$.  The quantity $$\alpha = \dot{A}/A$$
-is the average on-paper inflation rate (supply expansion APY) averaged
-on at-least-quarterly timescales.
-
-That is, an increase in staking fraction can be driven by more people
-staking, and/or it can be driven by a reduction of the inflation rate.
-The latter can be acheived in principle by a reduction of issuance
-relative to the base fee "burn rate".  Because of this quotient rule
-tradeoff, low-but-positive inflation actually plays a positive almost
-"infrastructure" role in moderating staking fraction.
-
-This positive role for inflation can be seen in the contours of the
-market equilibrium staking fraction $$s^\star$$ corresponding to
-$$\dot{s}=0$$, shown in [figure
-1](../assetsPosts/2024-12-05-issuance-fundamentals/staking-fixpoint.png).
-The equation graphed is as follows:
-
-$$\displaystyle
-s^\star = r^\star\frac{\alpha^\star/f^\star + 1}{\alpha^\star/f^\star + r^\star}
-$$
-
-The fraction $$0\leq r\leq 1$$ is the ratio of profits reinvested
-quarterly by validators, $$0\leq f\leq 1$$ is the fraction of unstaked
-ETH spent on transaction fees (base and priority) quarterly, and as
-above $$\alpha$$ is inflation.  Here $$r^\star$$ etc. means the
-function $$r(s,\alpha,\ldots)$$ at the equilibrium coordinates
-$$(s^\star,\alpha^\star,\ldots)$$.  To find the equilibrium values
-$$(\alpha^\star/f^\star,\,r^\star)$$ necessary to acheive a desired
-staking fraction $$x^\star$$, simply pick a colored contour in the
-figure: these are the values of constant $$x^\star$$.  For every point
-on this curve, the equilibrium inflation:fee ratio
-$$\alpha^\star/f^\star$$ is the x-coordinate, and the equilibrium
-reinvestment ratio $$r^\star$$ is the y-value.
-
-The two extremes are $$\alpha^\star\ll f^\star$$ fees dominate and
-$$\alpha^\star\gg f^\star$$ inflation dominates.  In the former,
-staking fraction becomes insensitive to reinvestment, raising
-$$x^\star$$.  Equivalntly, for any value of positive inflation,
-$$r^\star$$ is a lower bound for the equilibrium staking fraction we
-should expect.
-
-Approximate present values from YCharts are very roughly
-$$f\approx.001$$/year, $$\alpha\approx.005$$/year, $$r\in(.5,.75)$$.
-How these transient values $$(\alpha/f,\,r)$$ relate to their
-equilibrium values $$(\alpha^\star/f^\star,\,r^\star)$$ depends on
-some considerations.
-
-### Maintaining LI;ELF while changing Issuance
-
-Under current market conditions, low inflation and even lower fees
-(LI;ELF), the long-term equilibrium staking fraction approaches the
-average ratio $$r$$ at which validators reinvest their staking
-rewards.  This makes staking fraction responsive to economic
-interventions that affect the reinvestment decisions of participants.
-
-So if LI;ELF conditions persist, we expect the staking
-ratio converges to no more than +10\% of the the equilibrium
-reinvestment ratio.  Good news: if issuance can be reduced such that
-inflation is reduced by half, while fees etc. maintain, equilibrium is
-still around $$r$$ + 15\%, so $$s^\star\in(.58,.8)$$, at present values.
-
-If the yield curve is reduced from $$y_0=\frac{k}{\sqrt{S}}$$ to
-$$y'=\frac{y_0}{1+k'S}$$ as proposed in ----------, what is likely to
-happen?
-
-
-
-#### Macroeconomics at the Equilibrium Point
-
-Per the arguments of Ethereum researchers, high inflation could lead
-to runaway staking.  This has motivated the drive to reduce issuance
-and thus inflation.  Our model offers a perspective here as well.
-
-In our model the net effect of inflation on staking fraction at
-equilibrium is reflected by taking the derivative
-$$0<\left.\frac{ds^\star}{d\alpha}\right|^\star$$ assuming $$r,f$$ are
-implicit functions of $$\alpha$$.  That is, the necessary condition
-for inflation to push the market equilibrium $$s^\star$$ itself into
-runaway staking is (see below for explanation):
-
-$$\displaystyle
-1 ~~ < ~~
-\left.\frac{\partial\log\ r}{\partial\log\ \alpha}\right|^\star
-\cdot \frac{1 + \alpha^\star/f^\star}{1 - r^\star} ~~ + ~~
-\left.\frac{\partial\log\ f}{\partial\log\ \alpha}\right|^\star
-$$
-
-We hope that this work can be built upon to focus inflationary
-pressure arguments into empirically measurable assertions that can be
-tracked as a metric for Ethereum health.  If inflation pressures are
-indeed the dominant consideration for Ethereum users considering
-staking, this should emerge from microeconomic surveys of validators'
-reinvestment sentiments.  A semi-empirical measurement of correlations
-between transaction fees and inflation, using our model or similar to
-control for staking queue flows, etc. should also shed light on wether
-the above condition is satisfied or not.
-    
 ## Modelling Staking
 
 Now some more details!
@@ -1235,4 +1015,115 @@ a link between the boundary of the stable manifold and the conditions
 for inflation-led runaway-staking.
 
 ## In Conclusion
+
+#### Dynamics Supporting Market Equilibrium
+
+In some more detail, a sketch of the reasons behind our conclusions.
+The quantity of most importance to this debate is the staked ETH
+fraction $$s$$, as of Dec 2024 is [roughly
+.28](https://dune.com/queries/1933048/3188490). Staking fraction is
+calculated $$s=S/A$$ where $$S$$ is all staked ETH, $$C$$ is
+"circulating" (unstaked, unburnt) ETH, and $$A=S+C$$ is the total
+"accessible" (unburnt) ETH. Differential changes, such as changes in
+time $$\frac{ds}{dt}:=\dot{s}$$ are given by the quotient rule
+$$\dot{s}=\dot{S}/A-s\dot{A}/A$$.  The quantity $$\alpha = \dot{A}/A$$
+is the average on-paper inflation rate (supply expansion APY) averaged
+on at-least-quarterly timescales.
+
+That is, an increase in staking fraction can be driven by more people
+staking, and/or it can be driven by a reduction of the inflation rate.
+The latter can be acheived in principle by a reduction of issuance
+relative to the base fee "burn rate".  Because of this quotient rule
+tradeoff, low-but-positive inflation actually plays a positive almost
+"infrastructure" role in moderating staking fraction.
+
+This positive role for inflation can be seen in the contours of the
+market equilibrium staking fraction $$s^\star$$ corresponding to
+$$\dot{s}=0$$, shown in [figure
+1](../assetsPosts/2024-12-05-issuance-fundamentals/staking-fixpoint.png).
+The equation graphed is as follows:
+
+$$\displaystyle
+s^\star = r^\star\frac{\alpha^\star/f^\star + 1}{\alpha^\star/f^\star + r^\star}
+$$
+
+The fraction $$0\leq r\leq 1$$ is the ratio of profits reinvested
+quarterly by validators, $$0\leq f\leq 1$$ is the fraction of unstaked
+ETH spent on transaction fees (base and priority) quarterly, and as
+above $$\alpha$$ is inflation.  Here $$r^\star$$ etc. means the
+function $$r(s,\alpha,\ldots)$$ at the equilibrium coordinates
+$$(s^\star,\alpha^\star,\ldots)$$.  To find the equilibrium values
+$$(\alpha^\star/f^\star,\,r^\star)$$ necessary to acheive a desired
+staking fraction $$x^\star$$, simply pick a colored contour in the
+figure: these are the values of constant $$x^\star$$.  For every point
+on this curve, the equilibrium inflation:fee ratio
+$$\alpha^\star/f^\star$$ is the x-coordinate, and the equilibrium
+reinvestment ratio $$r^\star$$ is the y-value.
+
+The two extremes are $$\alpha^\star\ll f^\star$$ fees dominate and
+$$\alpha^\star\gg f^\star$$ inflation dominates.  In the former,
+staking fraction becomes insensitive to reinvestment, raising
+$$x^\star$$.  Equivalntly, for any value of positive inflation,
+$$r^\star$$ is a lower bound for the equilibrium staking fraction we
+should expect.
+
+Approximate present values from YCharts are very roughly
+$$f\approx.001$$/year, $$\alpha\approx.005$$/year, $$r\in(.5,.75)$$.
+How these transient values $$(\alpha/f,\,r)$$ relate to their
+equilibrium values $$(\alpha^\star/f^\star,\,r^\star)$$ depends on
+some considerations.
+
+### Maintaining LI;ELF while changing Issuance
+
+Under current market conditions, low inflation and even lower fees
+(LI;ELF), the long-term equilibrium staking fraction approaches the
+average ratio $$r$$ at which validators reinvest their staking
+rewards.  This makes staking fraction responsive to economic
+interventions that affect the reinvestment decisions of participants.
+
+So if LI;ELF conditions persist, we expect the staking
+ratio converges to no more than +10\% of the the equilibrium
+reinvestment ratio.  Good news: if issuance can be reduced such that
+inflation is reduced by half, while fees etc. maintain, equilibrium is
+still around $$r$$ + 15\%, so $$s^\star\in(.58,.8)$$, at present values.
+
+If the yield curve is reduced from $$y_0=\frac{k}{\sqrt{S}}$$ to
+$$y'=\frac{y_0}{1+k'S}$$ as proposed in ----------, what is likely to
+happen?
+
+#### Macroeconomics at the Equilibrium Point
+
+Per the arguments of Ethereum researchers, high inflation could lead
+to runaway staking.  This has motivated the drive to reduce issuance
+and thus inflation.  Our model offers a perspective here as well.
+
+In our model the net effect of inflation on staking fraction at
+equilibrium is reflected by taking the derivative
+$$0<\left.\frac{ds^\star}{d\alpha}\right|^\star$$ assuming $$r,f$$ are
+implicit functions of $$\alpha$$.  That is, the necessary condition
+for inflation to push the market equilibrium $$s^\star$$ itself into
+runaway staking is (see below for explanation):
+
+$$\displaystyle
+1 ~~ < ~~
+\left.\frac{\partial\log\ r}{\partial\log\ \alpha}\right|^\star
+\cdot \frac{1 + \alpha^\star/f^\star}{1 - r^\star} ~~ + ~~
+\left.\frac{\partial\log\ f}{\partial\log\ \alpha}\right|^\star
+$$
+
+We hope that this work can be built upon to focus inflationary
+pressure arguments into empirically measurable assertions that can be
+tracked as a metric for Ethereum health.  If inflation pressures are
+indeed the dominant consideration for Ethereum users considering
+staking, this should emerge from microeconomic surveys of validators'
+reinvestment sentiments.  A semi-empirical measurement of correlations
+between transaction fees and inflation, using our model or similar to
+control for staking queue flows, etc. should also shed light on wether
+the above condition is satisfied or not.
+    
+# Governance Centralization
+
+# Bifurcation Theory and Interventions
+
+# Modelling Price $(S,L,A,P,y)$ Dynamics
 
