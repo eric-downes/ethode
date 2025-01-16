@@ -4,6 +4,8 @@ from typing import Callable, Sequence
 
 from scipy.integrate._ivp.ivp import OdeResult
 from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 import numpy as np
 import pint
@@ -18,8 +20,7 @@ U.load_definitions('eth_units.txt')
 One = 1 * U.dimensionless
 Yr = 1 * U.years
 ETH = 1 * U.ETH
-ETH_Data = tuple[tuple[str, ETH],...]
-
+ETH_Data = tuple[tuple[str, Q],...]
 
 DEFAULTS = {
     bool: False,
@@ -28,7 +29,11 @@ DEFAULTS = {
     dict: {},
     None: None,
     int|float|np.float64: 0,
-    pint.Quantity: .1,
+    ETH: 1e6,
+    ETH/Yr: 1e3,
+    1/Yr: 1e-3,
+    One: 1e-1,
+    pint.Quantity: 1e-3,
 }
 
 # functional
@@ -41,15 +46,19 @@ def mag(x: Num|Nums|Q|Qs) -> Num|Nums:
         return con(mag(e) for e in x)
     else: return x
 
-def wmag(f:Callable|Q) -> Callable:
-    def wf(*args, _nomag:bool = True, **kwargs):
+def wmag(f:Callable) -> Callable:
+    def wf(*args, _nomag:bool = False, **kwargs):
         out = f(*args, **kwargs)
         return out if _nomag else mag(out)
     return wf
 
+def output(f:Callable) -> Callable:
+    f.is_output = True
+    return f
+
 # classy
 
-@dataclass # thanks Claude
+@dataclass
 class AutoDefault:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -71,21 +80,36 @@ class Params(AutoDefault):
 @dataclass
 class Sim(AutoDefault):
     params: Params
-    def sim(self) -> list[tuple[Q, ...]]: pass
+    def _output_fcns(self) -> Iterator[Callable]:
+        for name in dir(self):
+            if callable(f := getattr(self, name)) and \
+               getattr(f, 'is_output', False):
+                yield f
+    def sim(self) -> tuple[pd.DataFrame, OdeResult]: pass
     def test(self, tol:float = 1e-12) -> bool: pass
     @staticmethod
-    def func(t:Q, v:tuple[Q,...], p:Params) -> bool: pass
+    def func(t:Q, v:tuple[Q,...], p:Params) -> tuple[Q,...]: pass
 
 @dataclass
 class ODESim(Sim):
-    def sim(self) -> tuple[pd.DataFrame, Any]:
+    def sim(self, graph:tuple[str,...] = None
+            ) -> tuple[pd.DataFrame, Any]:
         p = self.params
         names, values = zip(*p.init_conds)
         out = solve_ivp(fun = wmag(self.func),
                         t_span = mag(p.tspan),
                         y0 = mag(values),
                         method = 'Radau',
-                        args = (self.params,))
+                        args = (p,))
         df = pd.DataFrame(out.y.T, columns = names)
         df['t'] = out.t
-        return df, out
+        colset = set(df.columns)
+        for f in self._output_fcns():
+            while (fname := f.__name__) in df.columns:
+                fname += '_'
+            df[fname] = df[list(colset.intersection(
+                f.__code__.co_varnames))].apply(
+                    lambda row: f(**row), axis=1)
+        self.df = df
+        self.out = out
+        return None
