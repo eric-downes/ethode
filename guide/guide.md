@@ -210,7 +210,203 @@ even when we *do* know something specific, what we know might just
 average out over timescales of interest!  Perhaps surprisingly, we can
 still come to conclusions about these systems.
 
-### More Technical Description for People Who Care
+### Issuance and Inflation
+
+Much depends on how accurate our approximation for issuance $I\approx
+yS$ is.
+
+#### Issuance in Annotated Spec
+
+The total revenue in block $t$ for a validator $i$ can be usefully
+split into the “base reward”, yield due to spot issuance of new ether
+$I^\bullet_i(t)$, and “other” $F^\bullet_i(t)$ including priority
+fees, block proposer fees, etc.  The latter do not contribute to
+issuance of new ether, but the base reward does.  The yield due to
+issuance is given in Vitalik Buterin’s [annotated specification](
+https://github.com/ethereum/annotated-spec/blob/98c63ebcdfee6435e8b2a76e1fca8549722f6336/phase0/beacon-chain.md#rewards-and-penalties-1)
+
+```python
+def get_base_reward(state: BeaconState, index: ValidatorIndex) -> Gwei:
+    total_balance = get_total_active_balance(state)
+    effective_balance = state.validators[index].effective_balance
+    return Gwei(effective_balance * BASE_REWARD_FACTOR // integer_squareroot(total_balance) // BASE_REWARDS_PER_EPOCH)
+```
+
+(This spec is several years out of date, except the yield curve and
+issuance essentials have not been touched, so we *believe* this is a
+decent guide.)
+
+Here `total_balance`is the sum of all balances of active validators
+$S^\bullet=\sum_iS^\bullet_i$ as we can see here:
+
+```python
+def get_total_active_balance(state: BeaconState) -> Gwei:
+    """
+    Return the combined effective balance of the active validators.
+    Note: ``get_total_balance`` returns ``EFFECTIVE_BALANCE_INCREMENT`` Gwei minimum to avoid divisions by zero.
+    """
+    return get_total_balance(state, set(get_active_validator_indices(state, get_current_epoch(state))))
+#...
+def get_total_balance(state: BeaconState, indices: Set[ValidatorIndex]) -> Gwei:
+    """
+    Return the combined effective balance of the ``indices``.
+    ``EFFECTIVE_BALANCE_INCREMENT`` Gwei minimum to avoid divisions by zero.
+    Math safe up to ~10B ETH, after which this overflows uint64.
+    """
+    return Gwei(max(EFFECTIVE_BALANCE_INCREMENT, sum([state.validators[index].effective_balance for index in indices])))
+#...
+def get_active_validator_indices(state: BeaconState, epoch: Epoch) -> Sequence[ValidatorIndex]:
+    """
+    Return the sequence of active validator indices at ``epoch``.
+    """
+    return [ValidatorIndex(i) for i, v in enumerate(state.validators) if is_active_validator(v, epoch)]
+#...
+def is_active_validator(validator: Validator, epoch: Epoch) -> bool:
+    """
+    Check if ``validator`` is active.
+    """
+    return validator.activation_epoch <= epoch < validator.exit_epoch
+```
+
+So we can estimate validator $i$’s share of issuance to the nearest
+gwei at block $t$ as
+$I^\bullet_i(t)=y_0(1)S^\bullet_i(t)/\sqrt{S^\bullet(t)}$ where
+$y_0(1)$ is the amount of ETH that would be issued per year were a
+total of 1 Ether staked; see below.
+
+What about for the system as a whole?  Similarly, we sum up each
+contribution $I^\bullet:=\sum_iI^\bullet_i$ obtaining
+$I^\bullet(t)=y_0(1)\sqrt{S^\bullet(t)}=y^\bullet(S^\bullet)\cdot
+S^\bullet$, expressed using an *issuance yield curve*
+$y^\bullet(S^\bullet)=y_0(1)/\sqrt{S^\bullet}$.
+
+The calculation of the constant $y_0(1)$ can be found in Ben
+Eddington's [Eth2.0 Book](
+https://eth2book.info/capella/part2/incentives/issuance/).  He
+approximates in terms of $N$ the number of validators (940.87
+ETH)$\sqrt{N}$/yr.  Like Eddington we will assume 32 ETH per validator
+obtaining $\boxed{y_0(1)\approx166.3/\mathrm{yr}}$.  
+
+#### Inflation
+
+### Inflation
+
+Inflation is used to refer to many things, but here we mean
+specifically the quarterly fractional change in accessible Ether.
+Consider $$\alpha:=\dot{A}/A\approx(I-B-J)/A$$ in light of the [above
+table](#table-of-flows).   In general and under
+the existing yield curve we have (where $$\beta=bf=B/U$$):[^noburn]
+
+$$\displaystyle
+\alpha\ \approx\ y(sA)s-\beta(1-s)-\jmath s \ =\ y_0(1)\sqrt{s/A}-\beta(1-s)-\jmath s
+$$
+
+You can explore this by adding `alpha(), sfrac()` as `@output` methods
+
+```python
+@dataclass
+class SUaConstParams(SUConstParams):
+    @output
+    def sfrac(self, S:ETH, U:ETH) -> One:
+        return S / (S + U)
+    @output
+    def alpha(self, S:ETH, U:ETH) -> 1/Yr:
+        s = self.sfrac(S,U)
+        return self.yld(S) * s - self.b * self.f * (1 - s) - self.j * s
+@dataclass
+class SUaConstSim(SUConstSim):
+    params: Params = field(default_factory = SUaConstParams)
+su_a = SUaConstSim()
+su_a.sim()
+```
+
+#### How Long can Inflation Last?
+
+There are concerns that increased staking could lead to inflation.
+Inflation is the log change in supply growth
+$\alpha:=\frac{d\log{A}}{dt}=\dot{A}/A$.  Here we obtain a
+timescale-sensitive upper bound on $\tau$-averaged issuance and
+therefore inflation.
+
+The only term contributing to supply is issuance $I$, and the only
+loss terms are burn $B$ and slashing $J$.
+
+$$
+\dot{A}=I-B-J
+$$
+
+Unlike $B,J$ issuance $I$ is a known function of the spot issuance
+yield curve $y^\bullet$ which is a function of spot staked ETH
+$S^\bullet$.
+
+$$\displaystyle
+\begin{array}{rcl}
+I &:=& \frac{1}{\tau}\int_{t-\tau}^t y^\bullet(S^\bullet) S^\bullet dt'
+I_0 &=& \frac{1}{\tau}\int_{t-\tau}^t y_0(1)\sqrt{S^\bullet} dt'
+$$
+
+In the [blog post](https://blog.20squares.xyz/issuance-dynamics/) we
+used an inequality using the covariance obtaining $I\leq yS$, where
+the variables without bullets are $\tau$-averaged.  Here we'll apply
+[Jensen's
+inequality](https://en.wikipedia.org/wiki/Jensen%27s_inequality) twice
+to obtain an upper bound on which is useful for quantitative
+calculations.  Specifically we'll use the time average of a square
+root is bounded above by the square root of the time average, and the
+staking fraction $s=S/A$.
+
+$$\displaystyle
+\begin{array}{rcl}
+dA = (I_0-B-J)dt &\leq& I_0dt = \left[\frac{1}{\tau}\int_{t-\tau}^t y_0(1)\sqrt{S^\bullet} dt'\right]dt\\
+dA &\leq& \left(\frac{1}{\tau}\int_{t-\tau}^t y_0(1)S^\bullet dt'\right)^{1/2} dt = y_0(1)\sqrt{S}dt\\
+\int_{t}^{t+\Delta t} A^{-1/2}dA &\leq& y_0(1)\int_t^{t+\Delta}\sqrt{s}dt'\\
+\frac{1}{2}\left(\sqrt{A(t+\Delta t)}-\sqrt{A(t)}\right)
+&\leq& y_0(1)\Delta t(\bar{s}_{\Delta t})^{1/2}
+\end{array}
+$$
+
+Here $\bar{s}_{\Delta t}$ is staking fraction averaged over the interval
+$(t,t+\Delta t)$.  Now, let us suppose that for some unspecified
+reason, supply grows exponentially over the same interval;
+$A(t+\Delta t)=A(t)e^{\alpha\Delta t}$; how long can it maintain this?
+
+$$\displaystyle
+\alpha\leq \alpha_{u.b.}(\Delta t) = \frac{2}{\Delta t}\log\left(
+1 + 2y_0(1)\Delta t \sqrt{\bar{s}_{\Delta t}/A(t)}\right)
+$$
+
+Using the Jan 2025 supply value $A(t)\approx120.4\times10^6$ETH and
+$y_0(1)\approx166.3$/yr we obtain the following bounds on just how bad
+inflation could get.  Much tighter bounds are possible under very
+reasonable economic assumptions (we are entirely neglecting burn), but these
+are gauranteed by the power of math alone.
+
+![Inflation Bounds](./assets/infl-limit.png)
+
+So not great, but not catastrophic either.
+
+```python
+from numpy import sqrt, log, linspace, meshgrid
+def alpha_ub(delt:Yr, save:One = .3,
+             Anow:ETH = 120.4e6, y1:1/Yr = 166.3) -> 1/Yr:
+    return (2 / delt) * log(1 + 2 * y1 * delt * sqrt(save / Anow))
+tvs = np.meshgrid(np.linspace(1/12,100,1000), np.linspace(.3,1,1000))
+a = alpha_ub(tvs[0], tvs[1])
+
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots()
+cntr = ax.contour(tvs[0], tvs[1], 100 * a)
+cbar = fig.colorbar(cntr)
+cbar.set_label(r'Persistent Inflation Upper Bound — $\alpha_{u.b.}$ [APR]')
+plt.xticks(np.arange(0,101, step=10))
+plt.grid(True, linestyle=':')
+plt.xlabel(r'Max Duration — $\Delta t$ [Yr]', size=14)
+plt.ylabel(r'Ave. Staking Frac. — $\bar{s}_{\Delta{t}}$ [1]', size=14)
+plt.title('Limits on Persistent Inflation', size=18)
+plt.show()
+```
+
+### More Mathematics for People Who Care
 
 If you have taken analysis and are curious what is going on.  Our
 dynamical variables $\vec{x}$ will always take real values
