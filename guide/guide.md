@@ -44,9 +44,9 @@ $$\displaystyle
 x_{t+\tau_b}=x_t + kx_t
 $$
 
-Ths could approximate ($k>0,~\tau_b\approx1$ year) the constant
+Ths could approximate ($k>0,\ \tau_b\approx1$ year) the constant
 inflation of currency supply $x$ of a blockchain with a fixed
-inflation rate.  It might also describe ($k<0,~\tau_b\approx30$ min)
+inflation rate.  It might also describe ($k<0,\ \tau_b\approx30$ min)
 the author's expected net worth $x$ every half-hour of an REI shopping
 expedition.
 
@@ -123,8 +123,9 @@ small as we can $x_t=:x^\star+\epsilon_t$.  For $$\tau>0$$, the system
 is stable when $$\epsilon_{t+\tau}<\epsilon_t$$; we need to asses the
 sign of this difference:
 
-$$\dislaystyle
-\frac{\epsilon_{t+\tau}-\epsilon_t}{\tau}=\frac{\kappa(x^\star+\epsilon_t)-\kappa(x^\star)}{\tau}~\overset{?}{<}~0.
+$$\displaystyle
+\frac{\epsilon_{t+\tau}-\epsilon_t}{\tau} =
+\frac{\kappa(x^\star+\epsilon_t)-\kappa(x^\star)}{\tau}\ \overset{?}{<}\ 0.
 $$
 
 Recallng that $$\kappa(x^\star)=0$$, we find that the stability
@@ -138,8 +139,12 @@ $\tau\gg\tau_{b}$ might help, otherwise there is not much more that
 can be said at this level of generality.  However when $$k$$ seems to
 vary smoothly we can hope to use calculus.  To dangerously abridge the
 first year of calculus: "deltas become derivatives";
-$$\Delta_tx\mapsto\frac{dx}{dt},
-~\kappa\mapsto\lim_{\tau_b\to0}\frac{\kappa_\Delta(x,\tau_b,\ldots)}{\tau_b}=:\kappa$.
+$$
+\begin{array}{rcl}
+\Delta_tx &\mapsto& \frac{dx}{dt}\\
+\kappa &\mapsto& \lim_{\tau_b\to0}\frac{\kappa_\Delta(x,\tau_b,\ldots)}{\tau_b}
+\end{array}
+$$
 
 If this limiting business with kappa seems artificial, consider the
 case that $x$ is a proof-of-stake cryptocurrency.  If the protocol
@@ -155,12 +160,11 @@ a one dimensional system everything else is held constant.  You can
 probably guess the conditions for stability here:
 
 $$\displaystyle
-\boxed{
 \begin{array}{rcl}
 \frac{dx}{dt} := \dot{x} &=& \kappa(x)\\
-\mathrm{Locally Stable iff} && \frac{\partial\kappa}{\partial x}<0
+\frac{\partial\kappa}{\partial x} &<& 0 \iff \mathrm{Locally-Stable}
 \end{array}
-}$$
+$$
 
 Here $$\frac{\partial\kappa}{\partial x}$$ plays exactly the same role
 that $$k$$ did earlier.  This similarity is no accident; perturbations
@@ -283,19 +287,19 @@ $y^\bullet(S^\bullet)=y_0(1)/\sqrt{S^\bullet}$.
 The calculation of the constant $y_0(1)$ can be found in Ben
 Eddington's [Eth2.0 Book](
 https://eth2book.info/capella/part2/incentives/issuance/).  He
-approximates in terms of $N$ the number of validators (940.87
-ETH)$\sqrt{N}$/yr.  Like Eddington we will assume 32 ETH per validator
-obtaining $\boxed{y_0(1)\approx166.3/\mathrm{yr}}$.  
+approximates in terms of $N$ the number of validators $y_0(1)=(940.87\
+\mathrm{ETH/yr})\sqrt{N}$ Like Eddington we will assume 32 ETH per
+validator obtaining $\boxed{y_0(1)\approx166.3/\mathrm{yr}}$.
 
-#### Inflation
+
+
 
 ### Inflation
 
 Inflation is used to refer to many things, but here we mean
-specifically the quarterly fractional change in accessible Ether.
-Consider $$\alpha:=\dot{A}/A\approx(I-B-J)/A$$ in light of the [above
-table](#table-of-flows).   In general and under
-the existing yield curve we have (where $$\beta=bf=B/U$$):[^noburn]
+specifically the quarterly fractional change in accessible Ether;
+$$\alpha:=\dot{A}/A\approx(I-B-J)/A$$.  In general and under the
+existing yield curve we have (where $$\beta=bf=B/U$$):
 
 $$\displaystyle
 \alpha\ \approx\ y(sA)s-\beta(1-s)-\jmath s \ =\ y_0(1)\sqrt{s/A}-\beta(1-s)-\jmath s
@@ -320,7 +324,7 @@ su_a = SUaConstSim()
 su_a.sim()
 ```
 
-#### How Long can Inflation Last?
+#### Bounding Persistent Inflation
 
 There are concerns that increased staking could lead to inflation.
 Inflation is the log change in supply growth
@@ -343,6 +347,7 @@ $$\displaystyle
 \begin{array}{rcl}
 I &:=& \frac{1}{\tau}\int_{t-\tau}^t y^\bullet(S^\bullet) S^\bullet dt'
 I_0 &=& \frac{1}{\tau}\int_{t-\tau}^t y_0(1)\sqrt{S^\bullet} dt'
+\end{array}
 $$
 
 In the [blog post](https://blog.20squares.xyz/issuance-dynamics/) we
@@ -821,7 +826,7 @@ concerns motivating the proposed changes to issuance curves.
 Altogether then, we have an endogenous dynamical system in which all of the
 coefficients are (not necessarily constant) fractions.
 
-$$\dislaystyle
+$$\displaystyle
 \begin{array}
 \dot{A} &=& yS-bf(A-S)\\
 \dot{S} &=& r(yS+(1-b)f(A-S))+q_+(A-S)-q_-S
@@ -1028,11 +1033,7 @@ our last post that since the Merge it seems
 $$|\dot{\alpha}|\ll|\dot{s}|$$ and at medium timescales there is
 support for a stable slowly changing value of $$\alpha^\star$$,
 supporting a study of the fixed point $$x^\star$$ *given* a value for
-$$\alpha^\star$$.
-
-
-
-This yields the solution
+$$\alpha^\star$$.  This yields the solution
 
 $$s^\star = \frac{r^\star (\alpha^\star + f^\star) + {q_+}^\star}{
 \alpha^\star + r^\star f^\star - {q_-}^\star}$$
@@ -1284,8 +1285,8 @@ inflation is reduced by half, while fees etc. maintain, equilibrium is
 still around $$r$$ + 15\%, so $$s^\star\in(.58,.8)$$, at present values.
 
 If the yield curve is reduced from $$y_0=\frac{k}{\sqrt{S}}$$ to
-$$y'=\frac{y_0}{1+k'S}$$ as proposed in ----------, what is likely to
-happen?
+$$y'=\frac{y_0}{1+k'S}$$ with $k=2^{-11}$/ETH as proposed by Elowsson,
+what is likely to happen?
 
 #### Macroeconomics at the Equilibrium Point
 
