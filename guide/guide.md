@@ -123,7 +123,7 @@ small as we can $x_t=:x^\star+\epsilon_t$.  For $$\tau>0$$, the system
 is stable when $$\epsilon_{t+\tau}<\epsilon_t$$; we need to asses the
 sign of this difference:
 
-$$\dislaystyle
+$$\displaystyle
 \frac{\epsilon_{t+\tau}-\epsilon_t}{\tau}=\frac{\kappa(x^\star+\epsilon_t)-\kappa(x^\star)}{\tau}~\overset{?}{<}~0.
 $$
 
