@@ -13,7 +13,7 @@ possible.  We believe dynamical systems and numerical suites like
 the conversation would significantly benefit from their use.  When we
 started this research, we actually did not set out to propose a new
 model or contend/debate any of the conventional wisdom, we just
-wannted to understand what the hell was going on.  We were led to
+wanted to understand what the hell was going on.  We were led to
 our model of Ethereum dynamics by the use of these tools.
 
 ## Pre-requisites
