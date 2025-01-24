@@ -44,7 +44,7 @@ $$\displaystyle
 x_{t+\tau_b}=x_t + kx_t
 $$
 
-Ths could approximate ($k>0,\tau_b\approx1$ year) the constant
+This could approximate ($k>0,\tau_b\approx1$ year) the constant
 inflation of currency supply $x$ of a blockchain with a fixed
 inflation rate.  It might also describe ($k<0,\tau_b\approx30$ min)
 the author's expected net worth $x$ every half-hour of an REI shopping
