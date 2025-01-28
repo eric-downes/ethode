@@ -1,4 +1,4 @@
-# issuance-fundamentals
+# ethode
 
 ## setup
 
@@ -13,7 +13,8 @@
 
 1. Install packages `python3 -m pip install -r requirements.txt`.
 
+1. Read through `examples.py`, referencing `ethode.py` to see how things are done
+
 1. ...
 
 1. Profit.
-

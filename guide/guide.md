@@ -13,7 +13,7 @@ possible.  We believe dynamical systems and numerical suites like
 the conversation would significantly benefit from their use.  When we
 started this research, we actually did not set out to propose a new
 model or contend/debate any of the conventional wisdom, we just
-wannted to understand what the hell was going on.  We were led to
+wanted to understand what the hell was going on.  We were led to
 our model of Ethereum dynamics by the use of these tools.
 
 ## Pre-requisites
@@ -44,7 +44,7 @@ $$\displaystyle
 x_{t+\tau_b}=x_t + kx_t
 $$
 
-Ths could approximate ($k>0,\ \tau_b\approx1$ year) the constant
+This could approximate ($k>0,\ \tau_b\approx1$ year) the constant
 inflation of currency supply $x$ of a blockchain with a fixed
 inflation rate.  It might also describe ($k<0,\ \tau_b\approx30$ min)
 the author's expected net worth $x$ every half-hour of an REI shopping
@@ -554,22 +554,22 @@ Briefly, vaidator rewards add to circulating (unstaked, unbured) ether
 $$\dot{C}^{val}=I+F$$, and transaction fees remove circulating ether;
 $$\dot{C}^{tx}=-F-B$$.  Some amount of net rewards $$R<I+F-J$$ are
 reinvested by staking businesses;
-$$\dot{C}^{rnvst}=-R;~\dot{S}^{rnvst}=+R$$; for LSTs this is
+$$\dot{C}^{rnvst}=-R;\ \dot{S}^{rnvst}=+R$$; for LSTs this is
 automatic.  Finally, net staking reduces circulating ether and
 increases staked ether
-$$\dot{C}^{queues}=-(Q_+-Q_-)/\tau;~\dot{S}^{queues}=+(Q_+-Q_-)/\tau$$.  All
+$$\dot{C}^{queues}=-(Q_+-Q_-)/\tau;\ \dot{S}^{queues}=+(Q_+-Q_-)/\tau$$.  All
 accessible ether increases or decreases based on the balance of
 issuance minus burn $$\doT{A}=I-B$$.  These quantities obey the
 following relationships:
 
 * $$Y = I+F$$ - total validator yield consists of issuance and priority fees
-* $$0< R\leq Y;~~r:=R/Y$$ - reward reinvestment is a ratio
-* $$0<B\leq F+B;~~b:=B/(F+B)$$ - base fee is a fraction of total transaction fees
+* $$0< R\leq Y;\ \ r:=R/Y$$ - reward reinvestment is a ratio
+* $$0<B\leq F+B;\ \ b:=B/(F+B)$$ - base fee is a fraction of total transaction fees
 * $$0<F+B+Q_+\leq C$$
   -- $$f:=(F+B)/C$$ - total transaction fees cannot exceed circulating ether
   -- $$q_+:=Q_+/C$$ - nor can new new staking
-* $$0\leq Q_-\leq S;~~q_-:=Q_-/S$$ - unstaking cannot exceed total staked ether.
-* $$0\leq L\leq S;~~\ell:=L/S$$ - LSTs are some fraction of staked Ether.
+* $$0\leq Q_-\leq S;\ \ q_-:=Q_-/S$$ - unstaking cannot exceed total staked ether.
+* $$0\leq L\leq S;\ \ \ell:=L/S$$ - LSTs are some fraction of staked Ether.
 * $$\alpha:\dot{A}/A$$ - in/de-flation can take any sign.
 
 From these considerations we derive an endogenous $$(S,A)$$-system,
@@ -840,7 +840,7 @@ somewhat trickier.  [A 2021
 anlysis](https://ethresear.ch/t/circulating-supply-equilibrium-for-ethereum-and-minimum-viable-issuance-during-the-proof-of-stake-era/10954)
 by Elowsson exploring some of the same issues illustrates this point
 nicely.  (Using the subscript $$E$$ for Elowsson; his variable names
-are in terms of ours: $$D_E=S,~ S_E=A,~ b_E=bf(1-s)$$.)
+are in terms of ours: $$D_E=S,\  S_E=A,\  b_E=bf(1-s)$$.)
 
 First, we must be careful in the $$s\to1$$ limit; this has the burn
 disappearing entirely, which is impossible if Ethereum is still
@@ -997,7 +997,7 @@ So probably, $$r$$ currently lies in the range $$.5\leq r\leq.75$$.
 
 The quarterly flows from the staking and unstaking queues must obey
 $$0\leq Q_+\leq C$$ and $$0\leq q_-\leq S$$, which we use below via
-variable fractions $$q_+=Q_+/C,~q_-=Q_-/S$$.  Finally, we rewrite
+variable fractions $$q_+=Q_+/C,\ q_-=Q_-/S$$.  Finally, we rewrite
 $$\dot{S}$$ the change in total staked ETH, anticipating that we wish
 to understand the relationship to inflation rate $$\dot{A}/A$$,
 obtaining $$\dot{S} = r\dot{A} + r(B+F) + Q_+-Q_-$$.  For about the
@@ -1011,7 +1011,7 @@ $$C=A-s$$, we obtain:
 
 $$
 \displaystyle
-\dot{s} ~~ = ~~ \frac{\dot{A}}{A}(r-s) ~~ + ~~ (rf+q_+)(1-s) ~~ - ~~ q_-s
+\dot{s} \ \  = \ \  \frac{\dot{A}}{A}(r-s) \ \  + \ \  (rf+q_+)(1-s) \ \  - \ \  q_-s
 $$
 
 The first term captures the effect of inflation/deflation.  Under
@@ -1064,7 +1064,7 @@ $$r$$, so $$q_+^\star\approx0$$.  Thus, the fixed point $$s^\star$$
 simplifies to
 
 $$\displaystyle
-s^\star ~~ = ~~ r^\star ~
+s^\star \ \  = \ \  r^\star \ 
 \frac{\alpha^\star + f^\star}{\alpha^\star + r^\star f^\star}
 $$
 
@@ -1107,7 +1107,7 @@ stability condition is
 
 $$\displaystyle
 1 + \left.\frac{r^\star}{\alpha^\star/f^\star}
-~~ > ~~
+\ \  > \ \ 
 \frac{\partial\log\ r}{\partial\log\ s}\right|^\star +
 \left(1 - \frac{r^\star}{s^\star}\right)
 \left.\frac{\partial\log(\alpha/f)}{\partial\log\ s}\right|^\star
@@ -1121,7 +1121,7 @@ yield curve $$y$$.
 priori gaurantee of this), then we can say something useful.
 Stability is automatic under inflation so long as
 $$\alpha^\star+r^\star f^\star>0$$.  If again derivatives are all
-small but $$\alpha<0,~rf<|\alpha|<f$$, then the fixed point is
+small but $$\alpha<0,\ rf<|\alpha|<f$$, then the fixed point is
 negative $$x^\star<0$$ and unstable, so runaway staking is inevitable;
 here deflation and tx fees shrink circulating Ether $$C$$ so quickly
 that no amount of profit-taking by validators short of en masse
@@ -1160,7 +1160,7 @@ looked at the fixed point $$s^\star=r(\alpha+f)/(\alpha+rf)$$, and
 note it reflects a role for inflation more nuanced than has usually
 been communicated.  In fact, we want to emphasize that deflation or
 zero growth could actually be quite dangerous; for instance when
-$$\alpha^\star<0,~|\alpha^\star|<rf$$ we have $x^\star>1$$; and there is no
+$$\alpha^\star<0,\ |\alpha^\star|<rf$$ we have $x^\star>1$$; and there is no
 interior fixed point.
 
 Why does this happen, though?  The reinvestment of issuance rewards
@@ -1191,9 +1191,9 @@ positive derivative condition becomes after some manipulation
 
 $$
 \displaystyle
-1 ~~ < ~~ \left.\frac{\partial\log\ r}{\partial\log\ \alpha}\right|^\star
+1 \ \  < \ \  \left.\frac{\partial\log\ r}{\partial\log\ \alpha}\right|^\star
 \cdot\frac{1+\alpha^\star/f^\star}{1-r^\star}
-~~ + ~~
+\ \  + \ \ 
 \left.\frac{\partial\log\ f}{\partial\log\ \alpha}\right|^\star
 $$
 
@@ -1302,9 +1302,9 @@ for inflation to push the market equilibrium $$s^\star$$ itself into
 runaway staking is (see below for explanation):
 
 $$\displaystyle
-1 ~~ < ~~
+1 \ \  < \ \ 
 \left.\frac{\partial\log\ r}{\partial\log\ \alpha}\right|^\star
-\cdot \frac{1 + \alpha^\star/f^\star}{1 - r^\star} ~~ + ~~
+\cdot \frac{1 + \alpha^\star/f^\star}{1 - r^\star} \ \  + \ \ 
 \left.\frac{\partial\log\ f}{\partial\log\ \alpha}\right|^\star
 $$
 
