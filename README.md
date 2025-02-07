@@ -10,11 +10,9 @@
 5.  Profit.
 
 ## Without `uv`
-1. You will need `python3.10` or newer; see if it is installed on your
-   system by executing in a terminal `python3 --version`.
-
-1. I recommend using [pyenv](https://github.com/pyenv/pyenv) to manage your python versions, or you can just [download python here](https://www.python.org/downloads/) and use a [virtual environment](https://docs.python.org/3/library/venv.html) to keep stuff separated.
-2. Install packages `python3 -m pip install -r requirements.txt`.
-3. Read through `examples.py`, referencing `ethode.py` to see how things are done
-4. ...
-5. Profit.
+1. You will need `python3.10` or newer; see if it is installed on your system by executing in a terminal `python3 --version`.
+2. I recommend using [pyenv](https://github.com/pyenv/pyenv) to manage your python versions, or you can just [download python here](https://www.python.org/downloads/) and use a [virtual environment](https://docs.python.org/3/library/venv.html) to keep stuff separated.
+3. Install packages `python3 -m pip install -r requirements.txt`.
+4. Read through `examples.py`, referencing `ethode.py` to see how things are done
+5. ...
+6. Profit.
