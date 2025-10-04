@@ -12,7 +12,7 @@ import jax.numpy as jnp
 
 from .config import ControllerConfig
 from .kernel import controller_step, controller_step_with_diagnostics
-from ..runtime import ControllerState
+from ..runtime import ControllerState, UnitSpec
 
 
 @dataclass
@@ -93,9 +93,24 @@ class PIDController:
 
         # Add rate limit if specified
         if hasattr(self, 'rate_limit') and self.rate_limit is not None:
-            self.config.rate_limit = (self.rate_limit, self.config.rate_limit[1])
+            # Properly construct the rate_limit with UnitSpec
+            from ..units import UnitManager
+            manager = UnitManager.instance()
 
-        self.runtime = self.config.to_runtime()
+            # Rate limit is typically in units/second (e.g., USD/second)
+            # Convert the float value to a proper tuple with UnitSpec
+            rate_limit_value = float(self.rate_limit)
+            rate_limit_spec = UnitSpec(
+                dimension="price/time",
+                symbol="USD/second",
+                to_canonical=1.0
+            )
+            self.config.rate_limit = (rate_limit_value, rate_limit_spec)
+
+            # Rebuild runtime with updated config
+            self.runtime = self.config.to_runtime()
+        else:
+            self.runtime = self.config.to_runtime()
 
         # Initialize state
         self.state = ControllerState.zero()
