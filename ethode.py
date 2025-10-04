@@ -9,6 +9,7 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 import pint
+from pathlib import Path
 
 Num = np.float64|float|int
 Nums = tuple[Num, ...]
@@ -16,7 +17,16 @@ Q = pint.Quantity
 Qs = tuple[Q, ...]
 
 U = pint.UnitRegistry()
-U.load_definitions('eth_units.txt')
+# Load eth_units.txt from the same directory as this file
+eth_units_path = Path(__file__).parent / 'eth_units.txt'
+if eth_units_path.exists():
+    U.load_definitions(str(eth_units_path))
+else:
+    # Fall back to trying current directory for backward compatibility
+    try:
+        U.load_definitions('eth_units.txt')
+    except FileNotFoundError:
+        pass  # Units file is optional
 One = 1 * U.dimensionless
 Yr = 1 * U.years
 ETH = 1 * U.ETH
