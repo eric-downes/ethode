@@ -64,6 +64,7 @@ class UnitManager:
         # These are the internal units we convert everything to
         self.canonical_units = {
             "time": self.registry.second,
+            "frequency": self.registry.Hz,  # 1/time
             "length": self.registry.meter,
             "mass": self.registry.kilogram,
             "temperature": self.registry.kelvin,
@@ -114,16 +115,18 @@ class UnitManager:
         Args:
             paths: List of paths to unit definition files.
                    If None, looks for eth_units.txt and btc_units.txt
+                   in the same directory as this module.
 
         Raises:
             FileNotFoundError: If a specified path doesn't exist
             Exception: If unit definitions cannot be loaded
         """
         if paths is None:
-            # Default paths to check - only load if they exist
+            # Look for unit files next to this module
+            module_dir = Path(__file__).parent
             default_paths = [
-                Path('eth_units.txt'),
-                Path('btc_units.txt'),
+                module_dir / 'eth_units.txt',
+                module_dir / 'btc_units.txt',
             ]
             # Only try to load files that exist
             paths = [p for p in default_paths if p.exists()]
@@ -133,7 +136,6 @@ class UnitManager:
                 raise FileNotFoundError(f"Unit definition file not found: {path}")
 
             self.registry.load_definitions(str(path))
-            print(f"Loaded unit definitions from {path}")
 
     def load_aliases(self, path: Path) -> None:
         """Load additional unit aliases from a file.
@@ -224,18 +226,20 @@ class UnitManager:
                 f"Cannot convert {quantity} to dimension '{dimension}': {e}"
             )
 
-        # Store the original units and calculate the conversion factor
-        # to_canonical is the factor to multiply the original unit by to get canonical
-        # e.g., for hours to seconds: 1 hour * 3600 = 3600 seconds
-        # So to_canonical = 3600
+        # Calculate conversion factor from units (not magnitudes)
+        # This avoids division by zero and works correctly for all values
+        # e.g., for hours to seconds: 1 hour = 3600 seconds, so factor = 3600
         original_units = quantity.units
+        one_original = self.registry.Quantity(1.0, original_units)
+        one_in_canonical = one_original.to(canonical_unit)
+        conversion_factor = float(one_in_canonical.magnitude)
 
         return (
             canonical_quantity.magnitude,
             UnitSpec(
                 dimension=dimension,
                 symbol=str(original_units),
-                to_canonical=float(canonical_quantity.magnitude / quantity.magnitude) if quantity.magnitude != 0 else 1.0
+                to_canonical=conversion_factor
             )
         )
 

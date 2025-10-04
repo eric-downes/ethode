@@ -12,7 +12,6 @@ from ethode.fields import (
     quantity_field,
     tuple_quantity_field,
     create_quantity_validator,
-    QuantityAnnotation,
 )
 
 

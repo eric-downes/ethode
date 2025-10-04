@@ -174,48 +174,8 @@ def tuple_quantity_field(
     return validator
 
 
-class QuantityAnnotation:
-    """Type annotation for quantity fields in Pydantic models.
-
-    This allows using Annotated types for cleaner model definitions:
-
-    Example:
-        from typing import Annotated
-
-        class MyConfig(BaseModel):
-            duration: Annotated[float, QuantityAnnotation("time", "second")]
-    """
-
-    def __init__(
-        self,
-        dimension: str,
-        default_unit: Optional[str] = None,
-        min_value: Optional[float] = None,
-        max_value: Optional[float] = None,
-    ):
-        self.dimension = dimension
-        self.default_unit = default_unit
-        self.min_value = min_value
-        self.max_value = max_value
-        self.validator = quantity_field(
-            dimension, default_unit, min_value, max_value
-        )
-
-    def __get_pydantic_core_schema__(
-        self, source_type: Any, handler: Callable
-    ) -> core_schema.CoreSchema:
-        """Generate Pydantic core schema for validation.
-
-        This method is called by Pydantic to build the validation schema.
-        """
-        python_schema = core_schema.chain_schema([
-            core_schema.no_info_plain_validator_function(self.validator),
-            core_schema.tuple_schema([
-                core_schema.float_schema(),
-                core_schema.any_schema(),
-            ])
-        ])
-        return core_schema.with_info_schema(python_schema)
+# QuantityAnnotation removed for now - needs proper core schema implementation
+# TODO: Implement proper Annotated type support for Pydantic v2 if needed
 
 
 def create_quantity_validator(

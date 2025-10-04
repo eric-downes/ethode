@@ -10,6 +10,7 @@ from .runtime import (
     MarketRuntime,
     SystemRuntime,
 )
+from .controller import ControllerConfig, ControllerConfigOutput, controller_step
 
 __all__ = [
     # Units
@@ -26,4 +27,8 @@ __all__ = [
     'SimulationOutput',
     'MarketRuntime',
     'SystemRuntime',
+    # Controller
+    'ControllerConfig',
+    'ControllerConfigOutput',
+    'controller_step',
 ]
