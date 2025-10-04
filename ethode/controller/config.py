@@ -6,7 +6,7 @@ inputs and convert them to runtime structures.
 
 from __future__ import annotations
 
-from typing import Optional, Union, Tuple, Any
+from typing import Optional, Union, Tuple, Any, Dict
 from dataclasses import dataclass
 import jax.numpy as jnp
 
@@ -208,14 +208,14 @@ class ControllerConfig(BaseModel):
             ),
         )
 
-    def summary(self, format: str = "markdown") -> str:
+    def summary(self, format: str = "markdown") -> Union[str, Dict[str, pint.Quantity]]:
         """Generate a formatted summary of the configuration.
 
         Args:
             format: Output format ("markdown", "text", or "dict")
 
         Returns:
-            Formatted string representation
+            Formatted representation (string or dict of pint quantities)
         """
         manager = UnitManager.instance()
 
