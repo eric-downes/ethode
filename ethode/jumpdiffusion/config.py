@@ -5,7 +5,7 @@ This module provides Pydantic configuration classes for ODE+Jump simulation.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from typing import Callable, Literal, Optional, Tuple, Any, Union
 import jax
 import jax.numpy as jnp
@@ -69,7 +69,7 @@ class JumpDiffusionConfig(BaseModel):
     hawkes_dt: Optional[Tuple[float, UnitSpec]] = Field(
         default=None,
         description="Time step for Hawkes thinning (Mode 1 only, ignored for Mode 2). "
-                    "Should be << 1/λ_max for accuracy. Default: min(0.1/λ_max, 0.25*τ_decay)"
+                    "Should be << 1/λ_max for accuracy. Auto-computed if not provided for Mode 1."
     )
 
     hawkes_max_events: Optional[int] = Field(
@@ -170,55 +170,25 @@ class JumpDiffusionConfig(BaseModel):
     @field_validator("hawkes_dt", mode="before")
     @classmethod
     def validate_hawkes_dt(cls, v, info):
-        """Validate hawkes_dt has time dimension (Mode 1 only)."""
-        jump_process = info.data.get('jump_process')
-        hawkes_mode = info.data.get('hawkes_mode', 'pregen')
+        """Validate hawkes_dt has time dimension if provided."""
+        if v is None:
+            # Auto-computation handled by model_validator
+            return v
 
-        # Only relevant for Mode 1 (pregen)
-        if jump_process is not None and isinstance(jump_process, HawkesConfig):
-            if hawkes_mode == 'pregen':
-                if v is None:
-                    # Auto-compute default: dt << min(1/λ_max, τ_decay)
-                    base_rate = jump_process.jump_rate[0]  # Extract value from tuple
-                    excitation = jump_process.excitation_strength[0]  # Extract value
-                    decay = jump_process.excitation_decay[0]
+        # Validate time dimension
+        manager = UnitManager.instance()
+        if isinstance(v, str):
+            q = manager.ensure_quantity(v)
+        elif isinstance(v, tuple):
+            return v
+        else:
+            q = manager.ensure_quantity(f"{v} second")
 
-                    # Stability check
-                    if excitation >= 1.0:
-                        raise ValueError(
-                            f"excitation_strength must be < 1.0 for stability, got {excitation}"
-                        )
+        dt_value, dt_spec = manager.to_canonical(q, "time")
+        if dt_value <= 0:
+            raise ValueError(f"hawkes_dt must be positive, got {dt_value}")
 
-                    # Compute maximum intensity accounting for self-excitation
-                    lambda_max = base_rate / (1.0 - excitation)
-                    default_dt = min(0.1 / lambda_max, 0.25 / decay)  # Corrected: 0.25 / decay not * decay
-                    return (default_dt, "second")
-
-                # Validate time dimension if provided
-                manager = UnitManager.instance()
-                if isinstance(v, str):
-                    q = manager.ensure_quantity(v)
-                elif isinstance(v, tuple):
-                    return v
-                else:
-                    q = manager.ensure_quantity(f"{v} second")
-
-                dt_value, dt_spec = manager.to_canonical(q, "time")
-                if dt_value <= 0:
-                    raise ValueError(f"hawkes_dt must be positive, got {dt_value}")
-
-                return (dt_value, dt_spec)
-            else:
-                # Mode 2 (online): hawkes_dt is ignored, warn if provided
-                if v is not None:
-                    warnings.warn(
-                        "hawkes_dt is ignored for hawkes_mode='online' (Mode 2). "
-                        "Event generation uses cumulative excitation, not pre-generation.",
-                        UserWarning
-                    )
-                return None
-
-        return v
+        return (dt_value, dt_spec)
 
     @field_validator("hawkes_max_events", mode="before")
     @classmethod
@@ -308,6 +278,34 @@ class JumpDiffusionConfig(BaseModel):
                     UserWarning
                 )
         return v
+
+    @model_validator(mode='after')
+    def _auto_compute_hawkes_dt(self):
+        """Auto-compute hawkes_dt if not provided for Mode 1."""
+        # Only auto-compute for Mode 1 Hawkes
+        if (isinstance(self.jump_process, HawkesConfig) and
+            self.hawkes_mode == 'pregen' and
+            self.hawkes_dt is None):
+
+            # Extract parameters from validated HawkesConfig
+            base_rate = self.jump_process.jump_rate[0]
+            excitation = self.jump_process.excitation_strength[0]
+            decay = self.jump_process.excitation_decay[0]
+
+            # Compute maximum intensity accounting for self-excitation
+            lambda_max = base_rate / (1.0 - excitation)
+            default_dt = min(0.1 / lambda_max, 0.25 / decay)
+
+            warnings.warn(
+                f"Mode 1 (Pre-gen Hawkes): Auto-computed hawkes_dt={default_dt:.6f} seconds. "
+                f"Based on λ_max={lambda_max:.3f}/s (base={base_rate:.3f}/s, α={excitation:.2f}) "
+                f"and τ_decay={decay:.1f}s. To override, provide hawkes_dt explicitly.",
+                UserWarning
+            )
+
+            self.hawkes_dt = (default_dt, "second")
+
+        return self
 
     def to_runtime(self, check_units: bool = True) -> 'JumpDiffusionRuntime':
         """Convert config to JAX-ready runtime structure."""

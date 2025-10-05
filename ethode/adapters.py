@@ -964,9 +964,73 @@ class JumpDiffusionAdapter:
         self.config = config
         self.runtime = config.to_runtime(check_units=check_units)
 
-        # State initialization is deferred to simulate() or step()
-        # Each call creates fresh buffer based on mode (lazy vs pre-gen)
-        self.state = None  # Will be initialized on first step() call
+        # Initialize state immediately for stateful API
+        self._initialize_state(t0=0.0)
+
+    def _initialize_state(self, t0: float = 0.0, seed: Optional[int] = None):
+        """Initialize simulation state with jump buffer.
+
+        Args:
+            t0: Initial time
+            seed: Random seed (uses runtime seed if None)
+        """
+        from .jumpdiffusion.runtime import JumpDiffusionState, ScheduledJumpBuffer
+        from .jumpprocess.runtime import JumpProcessState
+        from .jumpdiffusion.kernel import _generate_poisson_event
+
+        # Use provided seed or runtime seed
+        if seed is None:
+            seed = int(self.runtime.scheduler.seed)
+
+        rng_key = jax.random.PRNGKey(seed)
+        mode = self.runtime.scheduler.mode
+        initial_state = self.config.initial_state
+
+        # Default buffer size for stateful API (can be extended dynamically)
+        STATEFUL_BUFFER_SIZE = 10000
+
+        if mode == 0:
+            # Mode 0 (Poisson): Lazy generation
+            key1, key2 = jax.random.split(rng_key)
+            first_event, new_key = _generate_poisson_event(
+                self.runtime.scheduler.scheduled,
+                jnp.array(t0),
+                key1
+            )
+
+            event_times = jnp.full(STATEFUL_BUFFER_SIZE, jnp.inf, dtype=initial_state.dtype)
+            event_times = event_times.at[0].set(first_event)
+
+            jump_buffer = ScheduledJumpBuffer(
+                event_times=event_times,
+                count=jnp.array(STATEFUL_BUFFER_SIZE, dtype=jnp.int32),
+                next_index=jnp.array(0, dtype=jnp.int32),
+                rng_key=new_key,
+                cumulative_excitation=jnp.array(0.0, dtype=initial_state.dtype),
+                last_update_time=jnp.array(t0, dtype=initial_state.dtype)
+            )
+
+        elif mode == 1:
+            # Mode 1 (Pre-gen Hawkes): Not supported for stateful API
+            # Requires knowing t_span in advance
+            raise NotImplementedError(
+                "Stateful API (step/reset) not supported for Mode 1 (Pre-generated Hawkes). "
+                "Use simulate() method instead, which requires t_span."
+            )
+
+        else:  # mode == 2
+            # Mode 2 (Online Hawkes): Not yet implemented
+            raise NotImplementedError(
+                "Stateful API (step/reset) not yet implemented for Mode 2 (Online Hawkes). "
+                "Use simulate() method instead."
+            )
+
+        # Create initial state
+        self.state = JumpDiffusionState.zero(
+            initial_state,
+            jump_buffer,
+            t0=t0
+        )
 
     def simulate(
         self,
@@ -1028,8 +1092,10 @@ class JumpDiffusionAdapter:
         )
 
         # Check if jump occurred
+        idx = new_state.jump_buffer.next_index
+        next_jump_time = new_state.jump_buffer.event_times[idx]
         jump_occurred = jnp.logical_and(
-            jnp.isclose(new_state.t, new_state.jump_state.next_jump_time, rtol=0, atol=1e-9),
+            jnp.isclose(new_state.t, next_jump_time, rtol=0, atol=1e-9),
             new_state.t < t_end
         )
 
@@ -1052,9 +1118,7 @@ class JumpDiffusionAdapter:
             Stateful stepping (step/reset) currently only supports Mode 0 (Poisson).
             For Hawkes processes, use the functional simulate() method instead.
         """
-        # Stateful stepping not yet fully implemented for Hawkes
-        # For now, just clear state - it will be re-initialized on first step()
-        self.state = None
+        self._initialize_state(t0=t0, seed=seed)
 
     def get_state(self) -> dict:
         """

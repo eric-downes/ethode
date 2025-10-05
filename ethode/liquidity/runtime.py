@@ -6,25 +6,9 @@ stochastic liquidity dynamics.
 
 from __future__ import annotations
 from typing import Optional
-import dataclasses
 import jax
 import jax.numpy as jnp
-
-try:
-    import penzai
-    from penzai import struct
-except ImportError:
-    # Fallback for Penzai import
-    import sys
-
-    class struct:
-        """Mock struct module for fallback."""
-        @staticmethod
-        def pytree_dataclass(cls):
-            return dataclasses.dataclass(frozen=True)(cls)
-
-        Struct = object
-
+from penzai.core import struct
 
 from ..runtime import QuantityNode
 
@@ -34,6 +18,7 @@ class LiquidityRuntime(struct.Struct):
     """Runtime liquidity SDE parameters for JAX computation.
 
     All fields are QuantityNodes containing JAX arrays with unit metadata.
+    Penzai's @struct.pytree_dataclass automatically registers this as a JAX pytree.
     """
 
     initial_liquidity: QuantityNode
@@ -54,6 +39,7 @@ class LiquidityState(struct.Struct):
     """Runtime state for liquidity dynamics.
 
     Tracks current liquidity level and related statistics.
+    Penzai's @struct.pytree_dataclass automatically registers this as a JAX pytree.
     """
 
     liquidity_level: jax.Array     # Current liquidity in USD
