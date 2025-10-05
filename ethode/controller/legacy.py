@@ -2,11 +2,16 @@
 
 This module provides a PIDController class that mimics the old API
 while using the new unit-aware implementation internally.
+
+.. deprecated:: 2.0
+   The PIDParams class and legacy PIDController will be removed in v3.0.
+   Please migrate to ethode.controller.PIDController with ControllerConfig.
 """
 
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Callable
+import warnings
 import numpy as np
 import jax.numpy as jnp
 
@@ -19,6 +24,9 @@ from ..runtime import ControllerState, UnitSpec
 class PIDParams:
     """Legacy PID controller parameters (backward compatibility).
 
+    .. deprecated:: 2.0
+       PIDParams is deprecated. Use ControllerConfig instead.
+
     Maps to the new ControllerConfig internally.
     """
     kp: float = 1.0                # Proportional gain
@@ -28,6 +36,17 @@ class PIDParams:
     output_min: float = -np.inf    # Output bounds
     output_max: float = np.inf
     noise_threshold: float = 0.0   # Dead zone threshold
+
+    def __post_init__(self):
+        warnings.warn(
+            "PIDParams is deprecated and will be removed in v3.0. "
+            "Please use ethode.controller.ControllerConfig instead. "
+            "Example migration:\n"
+            "  Old: params = PIDParams(kp=1.0, ki=0.1, kd=0.01)\n"
+            "  New: config = ControllerConfig(kp=1.0, ki=0.1, kd=0.01)",
+            DeprecationWarning,
+            stacklevel=2
+        )
 
     def to_config(self) -> ControllerConfig:
         """Convert to new ControllerConfig."""
@@ -66,6 +85,14 @@ class PIDController:
         - Individual parameters: PIDController(kp=1.0, ki=0.1, kd=0.01)
         - Mix of both (kwargs override params)
         """
+        warnings.warn(
+            "Legacy PIDController is deprecated and will be removed in v3.0. "
+            "Please use ethode.controller.PIDController (main module) instead. "
+            "The new PIDController has improved unit handling and JAX integration.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         # Handle different initialization patterns
         if params is None:
             params = PIDParams()
@@ -103,8 +130,14 @@ class PIDController:
                 # Already a pint Quantity, use directly
                 qty = self.rate_limit
             elif isinstance(self.rate_limit, str):
-                # String that might contain units
-                qty = manager.ensure_quantity(self.rate_limit, "USD/second")
+                # Check if string is just a number (like "5" or "3.5")
+                try:
+                    numeric_value = float(self.rate_limit)
+                    # Treat numeric strings same as floats - apply default unit
+                    qty = manager.ensure_quantity(f"{numeric_value} USD/second", "USD/second")
+                except ValueError:
+                    # String has units (like "5 USD/hour"), parse as-is
+                    qty = manager.ensure_quantity(self.rate_limit, "USD/second")
             else:
                 # Numeric value - assume USD/second
                 qty = manager.ensure_quantity(f"{self.rate_limit} USD/second", "USD/second")

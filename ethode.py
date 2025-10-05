@@ -82,10 +82,27 @@ class AutoDefault:
             setattr(cls, name, field(
                     default = DEFAULTS.get(type_, None)))
 
+import warnings
+
 @dataclass
 class Params(AutoDefault):
+    """Legacy parameter base class.
+
+    .. deprecated:: 2.0
+       Use the new unit-aware Config/Runtime pattern instead.
+       See migration guide at docs/migration_guide.md
+    """
     init_conds: tuple[tuple[str,Q], ...]
     tspan: tuple[Q, ...]
+
+    def __post_init__(self):
+        warnings.warn(
+            "Params base class is deprecated and will be removed in v3.0. "
+            "Please migrate to the new Config/Runtime pattern. "
+            "See ethode.controller.ControllerConfig for an example.",
+            DeprecationWarning,
+            stacklevel=2
+        )
     
 @dataclass
 class Sim(AutoDefault):

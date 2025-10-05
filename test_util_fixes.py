@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import pint
 
 from ethode.controller import PIDController
+from ethode.controller.legacy import PIDController as LegacyPIDController
 from ethode.twap import JAXFlatWindowTWAP
 from ethode.units import UnitManager
 
@@ -72,6 +73,53 @@ class TestRateLimitTypeFix:
             assert isinstance(output, float)
 
         print("✓ Controller functions with all rate_limit types")
+
+
+class TestLegacyRateLimitTypeFix:
+    """Test that legacy controller rate_limit handles numeric strings correctly."""
+
+    def test_legacy_numeric_string_without_units(self):
+        """Test legacy controller with numeric string (no units)."""
+        controller = LegacyPIDController(
+            kp=0.1,
+            rate_limit="10"  # Should be treated as 10 USD/second
+        )
+
+        # Config is created during __init__, no need to call _ensure_config
+        assert controller.config.rate_limit is not None
+        rate_value, rate_spec = controller.config.rate_limit
+        assert rate_value == 10.0  # Should be 10 USD/second in canonical
+        assert rate_spec.dimension == "price/time"
+        print("✓ Legacy rate limit numeric string works")
+
+    def test_legacy_decimal_string_without_units(self):
+        """Test legacy controller with decimal string (no units)."""
+        controller = LegacyPIDController(
+            kp=0.1,
+            rate_limit="5.5"  # Should be treated as 5.5 USD/second
+        )
+
+        # Config is created during __init__
+        assert controller.config.rate_limit is not None
+        rate_value, rate_spec = controller.config.rate_limit
+        assert abs(rate_value - 5.5) < 1e-10
+        assert rate_spec.dimension == "price/time"
+        print("✓ Legacy rate limit decimal string works")
+
+    def test_legacy_string_with_units_still_works(self):
+        """Test legacy controller with string containing units still works."""
+        controller = LegacyPIDController(
+            kp=0.1,
+            rate_limit="300 USD/minute"  # Has units, should parse correctly
+        )
+
+        # Config is created during __init__
+        assert controller.config.rate_limit is not None
+        rate_value, rate_spec = controller.config.rate_limit
+        # 300 USD/minute = 5 USD/second
+        assert abs(rate_value - 5.0) < 1e-6
+        assert rate_spec.dimension == "price/time"
+        print("✓ Legacy rate limit with units still works")
 
 
 class TestJAXTWAPWrapAroundFix:
