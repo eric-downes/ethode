@@ -14,9 +14,13 @@ import pint
 # Import base classes - these are still in the old ethode.py file
 # We need to be careful about the module/package naming conflict
 import importlib.util
+import sys
 spec = importlib.util.spec_from_file_location("ethode_base", "./ethode.py")
 ethode_base = importlib.util.module_from_spec(spec)
 try:
+    # Register the module in sys.modules BEFORE executing it
+    # This fixes the NoneType error with dataclass decorator
+    sys.modules['ethode_base'] = ethode_base
     spec.loader.exec_module(ethode_base)
     Sim = ethode_base.Sim
     Params = ethode_base.Params
@@ -30,7 +34,8 @@ except:
     from ethode import Sim, Params, U, Yr, One, mag, wmag
 
 # Import PID controller from new ethode package
-from ethode.controller import PIDController, PIDParams
+from ethode.controller import PIDController
+from ethode.controller.legacy import PIDParams
 
 # Type aliases
 JumpEvent = Tuple[float, Callable]  # (time, effect_function)

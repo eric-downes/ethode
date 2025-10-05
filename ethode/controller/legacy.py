@@ -88,13 +88,23 @@ class PIDController:
         """
         from ..controller import ControllerConfig
 
-        # Check if we're being called with the new API (ControllerConfig)
+        # Type handling - distinguish between new and legacy API
         if isinstance(params, ControllerConfig):
             # New API: no deprecation warning
             self.config = params
             self.params = None  # No PIDParams for new API
             self.p = None
-        else:
+
+            # Warn only if kwargs are trying to override the config
+            if kwargs and not (len(kwargs) == 1 and 'rate_limit' in kwargs):
+                warnings.warn(
+                    "Passing kwargs to override a ControllerConfig is deprecated. "
+                    "Modify the config directly before passing it.",
+                    DeprecationWarning,
+                    stacklevel=2
+                )
+
+        elif isinstance(params, PIDParams) or params is None:
             # Legacy API: show deprecation warning
             warnings.warn(
                 "Legacy PIDController is deprecated and will be removed in v3.0. "
@@ -108,7 +118,7 @@ class PIDController:
             if params is None:
                 params = PIDParams()
 
-            # Apply any keyword overrides
+            # Apply any keyword overrides to params before creating config
             for key, value in kwargs.items():
                 if hasattr(params, key):
                     setattr(params, key, value)
@@ -117,8 +127,8 @@ class PIDController:
                     if key == 'tau_leak' and value is not None:
                         params.integral_leak = 1.0 / value if value > 0 else 0.0
                 elif key == 'rate_limit':
-                    # Store for later use
-                    self.rate_limit = value
+                    # Store for later processing
+                    pass  # Will be handled below
                 else:
                     # Store as attribute for compatibility
                     setattr(self, key, value)
@@ -129,33 +139,43 @@ class PIDController:
             # Create config and runtime
             self.config = params.to_config()
 
-        # Add rate limit if specified
-        if hasattr(self, 'rate_limit') and self.rate_limit is not None:
+        else:
+            raise TypeError(
+                f"PIDController expects PIDParams, ControllerConfig, or None, "
+                f"got {type(params).__name__}"
+            )
+
+        # Process rate_limit for both pathways (if specified in kwargs)
+        rate_limit = kwargs.get('rate_limit')
+        if rate_limit is not None:
             # Properly construct the rate_limit with UnitSpec using unit conversion
             from ..units import UnitManager
             import pint
             manager = UnitManager.instance()
 
             # Handle different input types for rate_limit
-            if isinstance(self.rate_limit, pint.Quantity):
+            if isinstance(rate_limit, pint.Quantity):
                 # Already a pint Quantity, use directly
-                qty = self.rate_limit
-            elif isinstance(self.rate_limit, str):
+                qty = rate_limit
+            elif isinstance(rate_limit, str):
                 # Check if string is just a number (like "5" or "3.5")
                 try:
-                    numeric_value = float(self.rate_limit)
+                    numeric_value = float(rate_limit)
                     # Treat numeric strings same as floats - apply default unit
                     qty = manager.ensure_quantity(f"{numeric_value} USD/second", "USD/second")
                 except ValueError:
                     # String has units (like "5 USD/hour"), parse as-is
-                    qty = manager.ensure_quantity(self.rate_limit, "USD/second")
+                    qty = manager.ensure_quantity(rate_limit, "USD/second")
             else:
                 # Numeric value - assume USD/second
-                qty = manager.ensure_quantity(f"{self.rate_limit} USD/second", "USD/second")
+                qty = manager.ensure_quantity(f"{rate_limit} USD/second", "USD/second")
 
             # Convert to canonical form for price/time dimension
             rate_value, rate_spec = manager.to_canonical(qty, "price/time")
             self.config.rate_limit = (rate_value, rate_spec)
+
+            # Store original value for compatibility
+            self.rate_limit = rate_limit
 
             # Rebuild runtime with updated config
             self.runtime = self.config.to_runtime()

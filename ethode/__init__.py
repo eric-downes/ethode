@@ -12,12 +12,27 @@ from .runtime import (
 )
 from .controller import ControllerConfig, ControllerConfigOutput, controller_step
 
-# Import legacy items for backward compatibility
-from .legacy import (
-    U, ETH, Yr, One, mag, wmag, output,
-    dataclass, field, AutoDefault, Params, Sim,
-    FinDiffParams, FinDiffSim, ODESim
-)
+# Lazy import for legacy API to avoid deprecation warnings on every import
+# Users who need legacy API must explicitly import from ethode.legacy
+import sys as _sys
+import importlib as _importlib
+
+def __getattr__(name):
+    """Lazy loading for legacy attributes to avoid deprecation warnings."""
+    # List of legacy attributes
+    legacy_attrs = {
+        'U', 'ETH', 'Yr', 'One', 'mag', 'wmag', 'output',
+        'dataclass', 'field', 'AutoDefault', 'Params', 'Sim',
+        'FinDiffParams', 'FinDiffSim', 'ODESim'
+    }
+
+    if name in legacy_attrs:
+        # Lazy load the legacy module only when accessed
+        if 'ethode.legacy' not in _sys.modules:
+            _importlib.import_module('ethode.legacy')
+        return getattr(_sys.modules['ethode.legacy'], name)
+
+    raise AttributeError(f"module 'ethode' has no attribute '{name}'")
 
 __all__ = [
     # Units
@@ -38,7 +53,7 @@ __all__ = [
     'ControllerConfig',
     'ControllerConfigOutput',
     'controller_step',
-    # Legacy (deprecated)
+    # Legacy (deprecated) - available via lazy loading
     'U', 'ETH', 'Yr', 'One', 'mag', 'wmag', 'output',
     'dataclass', 'field', 'AutoDefault', 'Params', 'Sim',
     'FinDiffParams', 'FinDiffSim', 'ODESim',

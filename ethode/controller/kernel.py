@@ -148,22 +148,22 @@ def controller_step(
 
     # Calculate what the integral would be if we integrate
     tentative_integral = leaked_integral + filtered_error * dt
-    tentative_i_term = runtime.ki.value * tentative_integral
-
-    # Calculate what the output would be with the new integral
-    tentative_output = p_term + tentative_i_term + d_term
 
     # Check if we need anti-windup
     if runtime.output_min is not None or runtime.output_max is not None:
         min_val = runtime.output_min.value if runtime.output_min else -jnp.inf
         max_val = runtime.output_max.value if runtime.output_max else jnp.inf
 
+        # Calculate what the output would be with the new integral
+        tentative_i_term = runtime.ki.value * tentative_integral
+        tentative_output = p_term + tentative_i_term + d_term
+
         # Check if output would saturate
         would_saturate_high = tentative_output > max_val
         would_saturate_low = tentative_output < min_val
 
         # Simple anti-windup: don't integrate if output would saturate
-        # This is the most common form of anti-windup
+        # This prevents integral windup when the controller is saturated
         should_prevent = would_saturate_high | would_saturate_low
 
         # Don't integrate if we would saturate
@@ -172,7 +172,7 @@ def controller_step(
         # No limits, always integrate
         new_integral = tentative_integral
 
-    # Calculate final output with the actual integral
+    # Calculate final I term and output with the actual integral
     i_term = runtime.ki.value * new_integral
     raw_output = p_term + i_term + d_term
 

@@ -334,6 +334,45 @@ class TestControllerKernel:
         new_state2, output2 = controller_step(runtime, new_state, large_error, dt)
         assert output2 == pytest.approx(2 * max_change)
 
+    def test_anti_windup(self):
+        """Test anti-windup prevents integral accumulation when saturated."""
+        config = ControllerConfig(
+            kp=0.0,  # No proportional
+            ki=1.0,  # Only integral
+            kd=0.0,  # No derivative
+            tau=100.0,  # Default integral leak
+            noise_band=(0.0, 0.0),  # No noise filtering
+            output_min=0.0,
+            output_max=1.0,
+        )
+
+        runtime = config.to_runtime()
+        state = ControllerState.zero()
+
+        # Apply large positive error that would saturate
+        large_error = jnp.array(10.0)
+        dt = jnp.array(0.1)
+
+        # Step multiple times with large error
+        for _ in range(10):
+            state, output = controller_step(runtime, state, large_error, dt)
+            # Output should be saturated at max (or very close due to integral leak)
+            assert float(output) == pytest.approx(1.0, abs=0.01)
+
+        # The integral should not have grown unboundedly
+        # With anti-windup, integral should stop growing when saturated
+        # Without anti-windup, integral would be 10 * 10.0 * 0.1 = 10.0
+        # With anti-windup, integral should be close to 1.0 (the saturation limit)
+        assert float(state.integral) < 2.0  # Should be around 1.0, not 10.0
+
+        # Now apply negative error to bring output back down
+        negative_error = jnp.array(-0.5)
+        state, output = controller_step(runtime, state, negative_error, dt)
+
+        # Output should respond quickly (not stuck at saturation)
+        # This verifies the integral didn't wind up too much
+        assert float(output) < 1.0  # Should come down from saturation
+
     def test_jit_compilation(self):
         """Test that kernel can be JIT compiled."""
         config = ControllerConfig(
