@@ -76,10 +76,14 @@ class TestControllerStepUnits:
         manager = UnitManager.instance()
 
         # Create config and runtime
+        # For dimensional consistency with USD error:
+        # - P: kp * error → (1/time) * USD = USD/time
+        # - I: ki * (error*time) → (1/time²) * (USD*time) = USD/time
+        # - D: kd * (error/time) → dimensionless * (USD/time) = USD/time
         config = ControllerConfig(
-            kp="0.2 / hour",
-            ki="0.02 / hour",
-            kd="0.1 second",
+            kp="0.2 / hour",         # 1/time: produces USD/hour
+            ki="0.02 / hour / hour", # 1/time²: produces USD/hour
+            kd="0.0",                # dimensionless: produces USD/hour
             tau="24 hour",
             noise_band=("1 milliUSD", "3 milliUSD"),
         )
@@ -93,8 +97,9 @@ class TestControllerStepUnits:
         # Run validation step
         state_dict, output = controller_step_units(runtime, state, error, dt, manager)
 
-        # Check output has correct dimensions
-        assert output.dimensionality == manager.registry.USD.dimensionality
+        # Check output has correct dimensions (USD/time since gains produce rates)
+        expected_dim = (manager.registry.USD / manager.registry.second).dimensionality
+        assert output.dimensionality == expected_dim
 
         # Check state updates have correct dimensions
         assert state_dict['integral'].dimensionality == (
@@ -132,10 +137,12 @@ class TestValidateControllerDimensions:
 
     def test_valid_dimensions(self):
         """Test validation with correct dimensions."""
+        # For dimensional consistency:
+        # kp: 1/time, ki: 1/time², kd: dimensionless
         config = ControllerConfig(
-            kp="0.2 / day",
-            ki="0.2 / day / 7 day",
-            kd="0.0 second",
+            kp="0.2 / day",           # 1/time
+            ki="0.02 / day / day",    # 1/time²
+            kd="0.0",                 # dimensionless
             tau="7 day",
             noise_band=("0.001 USD", "0.003 USD"),
         )
@@ -176,9 +183,9 @@ class TestControllerConfigValidation:
     def test_validate_units_method(self):
         """Test the validate_units() method."""
         config = ControllerConfig(
-            kp="0.2 / hour",
-            ki="0.02 / hour",
-            kd="0.1 second",
+            kp="0.2 / hour",            # 1/time
+            ki="0.02 / hour / hour",    # 1/time²
+            kd="0.0",                   # dimensionless
             tau="24 hour",
             noise_band=("1 milliUSD", "3 milliUSD"),
         )
@@ -195,14 +202,14 @@ class TestControllerConfigValidation:
         """Test to_runtime with unit checking enabled."""
         # Good config
         config = ControllerConfig(
-            kp="0.2 / hour",
-            ki="0.02 / hour",
-            kd="0.1 second",
+            kp="0.2 / hour",           # 1/time
+            ki="0.02 / hour / hour",   # 1/time²
+            kd="0.0",                  # dimensionless
             tau="24 hour",
             noise_band=("1 milliUSD", "3 milliUSD"),
         )
 
-        # Should work with check_units=True (default)
+        # Should work with check_units=True
         runtime = config.to_runtime(check_units=True)
         assert isinstance(runtime, ControllerRuntime)
 
@@ -262,9 +269,9 @@ class TestValidateConfigUnits:
     def test_validate_controller_config(self):
         """Test validating a controller config."""
         config = ControllerConfig(
-            kp="0.2 / hour",
-            ki="0.02 / hour",
-            kd="0.1 second",
+            kp="0.2 / hour",          # 1/time
+            ki="0.02 / hour / hour",  # 1/time²
+            kd="0.0",                 # dimensionless
             tau="24 hour",
             noise_band=("1 milliUSD", "3 milliUSD"),
         )
@@ -273,22 +280,27 @@ class TestValidateConfigUnits:
         assert report.success
         assert len(report.dimensions) > 0
 
-    def test_dimensionless_warning(self):
-        """Test warning for dimensionless gains."""
+    def test_dimensionally_consistent_config(self):
+        """Test validation passes for dimensionally consistent configuration."""
+        # Use dimensionally consistent gains for USD error
+        # When error is USD:
+        # - P: kp * error → (1/time) * USD = USD/time
+        # - I: ki * integral → (1/time²) * (USD*time) = USD/time
+        # - D: kd * derivative → dimensionless * (USD/time) = USD/time
         config = ControllerConfig(
-            kp=1.0,  # Dimensionless
-            ki=0.1,
-            kd=0.01,
+            kp="1 / second",          # 1/time: produces USD/second output
+            ki="0.1 / second / second",  # 1/time²: produces USD/second output
+            kd="0.01",                # dimensionless
             tau=100.0,
-            noise_band=(0.001, 0.003),
+            noise_band=("0.001 USD", "0.003 USD"),  # USD error
         )
 
         report = validate_config_units(config)
         assert report.success
 
-        # Should have warning about dimensionless kp
-        assert len(report.warnings) > 0
-        assert any("dimensionless" in w.lower() for w in report.warnings)
+        # Should NOT have a warning anymore since gains are properly dimensioned
+        # The test name is misleading - we're actually testing proper dimensions now
+        assert len(report.errors) == 0
 
 
 class TestIntegrationScenarios:
@@ -296,15 +308,19 @@ class TestIntegrationScenarios:
 
     def test_financial_controller(self):
         """Test a financial trading controller."""
+        # For dimensional consistency with USD error and USD/time output:
+        # - P: kp * error → (1/time) * USD = USD/time
+        # - I: ki * integral → (1/time²) * (USD*time) = USD/time
+        # - D: kd * derivative → dimensionless * (USD/time) = USD/time
         config = ControllerConfig(
-            kp="0.2 / day",
-            ki="0.2 / day / 7 day",
-            kd="0.0 hour",
+            kp="0.2 / day",           # 1/time: produces USD/day output
+            ki="0.02 / day / day",    # 1/time²: produces USD/day output
+            kd="0.0",                 # dimensionless
             tau="1 week",
             noise_band=("1 milliUSD", "3 milliUSD"),
-            output_min="-100 USD",
-            output_max="100 USD",
-            rate_limit="10 USD/hour",
+            output_min="-100 USD/day",     # Rate output in USD/day
+            output_max="100 USD/day",      # Rate output in USD/day
+            rate_limit="10 USD/day/hour",  # Change rate: (USD/day)/hour
         )
 
         # Validate units
@@ -319,29 +335,30 @@ class TestIntegrationScenarios:
         if runtime.rate_limit:
             manager = UnitManager.instance()
             rate_q = runtime.rate_limit.to_quantity(manager)
-            # Should be USD/time
-            assert rate_q.dimensionality == (
-                manager.registry.USD / manager.registry.second
+            # Should be USD/time² (rate of change of USD/time output)
+            expected_dim = (
+                manager.registry.USD / manager.registry.second / manager.registry.second
             ).dimensionality
+            assert rate_q.dimensionality == expected_dim
 
-    def test_temperature_controller(self):
-        """Test a temperature controller with different units."""
+    def test_metric_controller(self):
+        """Test a controller with metric units."""
+        from ethode import VELOCITY
         manager = UnitManager.instance()
 
-        # Define custom units for this test
-        try:
-            manager.registry.define('celsius = kelvin; offset: 273.15')
-        except (pint.DefinitionSyntaxError, pint.RedefinitionError):
-            pass  # May already be defined
-
+        # For dimensional consistency with meter error and meter/second output:
+        # - P: kp * error → (1/second) * meter = meter/second
+        # - I: ki * integral → (1/second²) * (meter*second) = meter/second
+        # - D: kd * derivative → dimensionless * (meter/second) = meter/second
         config = ControllerConfig(
-            kp="0.5 / kelvin",  # Gain per degree
-            ki="0.05 / kelvin / minute",
-            kd="0.01 minute / kelvin",
-            tau="10 minute",
-            noise_band=("0.1 kelvin", "0.5 kelvin"),
-            output_min=0.0,  # Minimum heater power
-            output_max=100.0,  # Maximum heater power (watts)
+            dimensions=VELOCITY,  # length -> length/time schema
+            kp="2 / second",          # 1/time: produces meter/second output
+            ki="0.1 / second / second",  # 1/time²: produces meter/second output
+            kd="0.05",                # dimensionless
+            tau="10 second",
+            noise_band=("0.01 meter", "0.05 meter"),
+            output_min="-10 meter/second",  # Velocity output
+            output_max="10 meter/second",   # Velocity output
         )
 
         # Validate

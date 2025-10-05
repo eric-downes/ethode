@@ -162,7 +162,8 @@ def controller_step_units(
 
 def validate_controller_dimensions(
     runtime: ControllerRuntime,
-    manager: Optional[UnitManager] = None
+    manager: Optional[UnitManager] = None,
+    dimensions: Optional['ControllerDimensions'] = None
 ) -> Dict[str, str]:
     """Validate that controller dimensions are self-consistent.
 
@@ -171,6 +172,7 @@ def validate_controller_dimensions(
     Args:
         runtime: ControllerRuntime to validate
         manager: UnitManager instance
+        dimensions: Optional dimension schema (uses default if not provided)
 
     Returns:
         Dict mapping term names to their dimensions
@@ -182,10 +184,28 @@ def validate_controller_dimensions(
     if manager is None:
         manager = UnitManager.instance()
 
-    # Get the error dimension from noise band (if specified) or default to USD
-    error_units = 'USD'  # Default
-    if runtime.noise_band_low and runtime.noise_band_low.units.symbol != 'dimensionless':
-        error_units = runtime.noise_band_low.units.symbol
+    # Use provided dimensions or create default from runtime
+    if dimensions is None:
+        from ethode.controller.dimensions import FINANCIAL
+        dimensions = FINANCIAL
+
+    # Map dimension names to pint units
+    dimension_to_units = {
+        "price": "USD",
+        "temperature": "kelvin",
+        "length": "meter",
+        "force": "newton",
+        "pressure": "pascal",
+        "flow_rate": "liter/second",
+        "dimensionless": "dimensionless",
+        "time": "second",
+        "price/time": "USD/second",
+        "length/time": "meter/second",
+    }
+
+    # Get appropriate units for error from schema
+    # If not in our map, try to use it directly as a unit string
+    error_units = dimension_to_units.get(dimensions.error_dim, dimensions.error_dim)
 
     # Create test quantities
     test_error = manager.registry.Quantity(1.0, error_units)
@@ -327,13 +347,18 @@ def validate_config_units(config: Any, verbose: bool = False) -> ValidationRepor
         # If it's a controller config, do deeper validation
         if hasattr(config, 'kp'):  # ControllerConfig
             try:
-                dimensions = validate_controller_dimensions(runtime)
+                # Pass dimensions schema if available
+                config_dimensions = getattr(config, 'dimensions', None)
+                dimensions = validate_controller_dimensions(runtime, dimensions=config_dimensions)
                 report.dimensions = dimensions
 
-                # Check for common issues
-                if 'dimensionless' in str(dimensions.get('kp', '')):
+                # Only warn about dimensionless if not explicitly using dimensionless schema
+                if config_dimensions and config_dimensions.error_dim == "dimensionless" and config_dimensions.output_dim == "dimensionless":
+                    # Dimensionless schema is intentional, no warning
+                    pass
+                elif 'dimensionless' in str(dimensions.get('kp', '')):
                     report.warnings.append(
-                        "kp appears dimensionless - consider using frequency units like '1/hour'"
+                        "kp appears dimensionless - consider using frequency units like '1/hour' or specify a dimensions schema"
                     )
 
             except ValueError as e:

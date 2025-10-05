@@ -10,7 +10,17 @@ from .runtime import (
     MarketRuntime,
     SystemRuntime,
 )
-from .controller import ControllerConfig, ControllerConfigOutput, controller_step
+from .controller import (
+    ControllerConfig,
+    ControllerConfigOutput,
+    ControllerDimensions,
+    controller_step,
+    DIMENSIONLESS,
+    FINANCIAL,
+    TEMPERATURE,
+    VELOCITY,
+    POSITION,
+)
 
 # Lazy import for legacy API to avoid deprecation warnings on every import
 # Users who need legacy API must explicitly import from ethode.legacy
@@ -52,7 +62,14 @@ __all__ = [
     # Controller
     'ControllerConfig',
     'ControllerConfigOutput',
+    'ControllerDimensions',
     'controller_step',
+    # Dimension schemas
+    'DIMENSIONLESS',
+    'FINANCIAL',
+    'TEMPERATURE',
+    'VELOCITY',
+    'POSITION',
     # Legacy (deprecated) - available via lazy loading
     'U', 'ETH', 'Yr', 'One', 'mag', 'wmag', 'output',
     'dataclass', 'field', 'AutoDefault', 'Params', 'Sim',

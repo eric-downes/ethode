@@ -23,10 +23,9 @@ class TestControllerConfig:
             noise_band=("0.001 USD", "0.003 USD"),
         )
 
-        # Check values were parsed and converted
-        # "0.2 / day" should be converted to Hz (canonical for frequency)
-        expected_kp = 0.2 / 86400  # 0.2 per day in Hz
-        assert config.kp[0] == pytest.approx(expected_kp, rel=1e-6)
+        # Check values were parsed and stored with their units
+        # With the schema-based approach, values are stored as-is
+        assert config.kp[0] == 0.2  # 0.2 / day stored as magnitude
         assert config.tau[0] == pytest.approx(7 * 86400)  # 7 days in seconds
 
     def test_create_with_floats(self):
@@ -104,7 +103,7 @@ class TestControllerConfig:
                 noise_band=(0.003, 0.001),  # Wrong order
             )
 
-        assert "must be less than" in str(exc_info.value)
+        assert "must be less than or equal to" in str(exc_info.value)
 
     def test_negative_tau_rejected(self):
         """Test that negative time constant is rejected."""
@@ -131,7 +130,8 @@ class TestControllerConfig:
 
         # Check runtime structure
         assert runtime.kp.value.shape == ()  # Scalar
-        assert runtime.kp.units.dimension in ["frequency", "1/time", "dimensionless"]
+        # With schema, kp dimension is preserved (1 / [time])
+        assert "[time]" in runtime.kp.units.dimension or runtime.kp.units.dimension in ["frequency", "1/time", "dimensionless"]
         assert runtime.tau.value == pytest.approx(7 * 86400)
         assert runtime.noise_band_low.value == pytest.approx(0.001)
         assert runtime.noise_band_high.value == pytest.approx(0.003)

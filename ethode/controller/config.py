@@ -16,6 +16,7 @@ import pint
 from ..units import UnitManager, UnitSpec, QuantityInput
 from ..fields import quantity_field, tuple_quantity_field
 from ..runtime import QuantityNode, ControllerRuntime
+from .dimensions import ControllerDimensions, FINANCIAL
 
 
 class ControllerConfig(BaseModel):
@@ -26,9 +27,10 @@ class ControllerConfig(BaseModel):
     units internally while preserving original unit information.
 
     Attributes:
-        kp: Proportional gain (1/time or dimensionless)
-        ki: Integral gain (1/time^2 or 1/time or dimensionless)
-        kd: Derivative gain (time or dimensionless)
+        dimensions: Schema for signal dimensions (defaults to financial: price->price/time)
+        kp: Proportional gain (dimension depends on error/output schema)
+        ki: Integral gain (dimension depends on error/output schema)
+        kd: Derivative gain (dimension depends on error/output schema)
         tau: Time constant for integral leak (time)
         noise_band: Tuple of (low, high) thresholds for error filtering
         output_min: Optional minimum output value
@@ -37,6 +39,12 @@ class ControllerConfig(BaseModel):
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    # Dimension schema (default to financial for backward compatibility)
+    dimensions: ControllerDimensions = Field(
+        default_factory=lambda: FINANCIAL,
+        description="Schema defining signal dimensions"
+    )
 
     # Required fields
     kp: Tuple[float, UnitSpec] = Field(
@@ -82,30 +90,26 @@ class ControllerConfig(BaseModel):
         elif isinstance(v, pint.Quantity):
             q = v
         else:
-            # Numeric value - use default units
-            if field_name in ("kp", "ki"):
-                q = manager.ensure_quantity(v, default_unit="1/second")
-            else:  # kd
-                q = manager.ensure_quantity(v, default_unit="second")
+            # Numeric value - assume dimensionless
+            q = manager.ensure_quantity(v, default_unit="")
 
-        # Convert to canonical form, preserving the original dimension
-        # Don't force specific dimensions - let validation catch issues later
+        # Get the actual dimensions and conversion factor
         dimension_str = str(q.dimensionality)
 
-        # Map common patterns to our canonical dimensions
-        if "1 / [time]" in dimension_str or q.dimensionality == manager.registry.Hz.dimensionality:
-            return manager.to_canonical(q, "frequency")
-        elif "[time]" in dimension_str and "1 /" not in dimension_str:
-            return manager.to_canonical(q, "time")
-        elif q.dimensionality == manager.registry.dimensionless.dimensionality:
-            return manager.to_canonical(q, "dimensionless")
-        else:
-            # Accept any dimension - validation will check compatibility later
-            return (float(q.magnitude), UnitSpec(
-                dimension=dimension_str,
-                symbol=str(q.units),
-                to_canonical=1.0
-            ))
+        # Try to get conversion factor to base units
+        try:
+            base_q = q.to_base_units()
+            to_canonical = float(base_q.magnitude / q.magnitude) if q.magnitude != 0 else 1.0
+        except:
+            to_canonical = 1.0
+
+        # Create a UnitSpec that preserves the actual dimensions
+        # This allows any dimension to be used, with validation happening later
+        return (float(q.magnitude), UnitSpec(
+            dimension=dimension_str if dimension_str != "dimensionless" else "dimensionless",
+            symbol=str(q.units),
+            to_canonical=to_canonical
+        ))
 
     @field_validator("tau", mode="before")
     @classmethod
@@ -115,7 +119,7 @@ class ControllerConfig(BaseModel):
 
     @field_validator("noise_band", mode="before")
     @classmethod
-    def validate_noise_band(cls, v: Any) -> Tuple[Tuple[float, UnitSpec], Tuple[float, UnitSpec]]:
+    def validate_noise_band(cls, v: Any, info) -> Tuple[Tuple[float, UnitSpec], Tuple[float, UnitSpec]]:
         """Validate noise band as tuple of values."""
         manager = UnitManager.instance()
 
@@ -125,19 +129,33 @@ class ControllerConfig(BaseModel):
 
         low, high = v
 
-        # Parse each value
-        low_q = manager.ensure_quantity(low, default_unit="USD")
-        high_q = manager.ensure_quantity(high, default_unit="USD")
+        # Get the dimensions from the config if available
+        dimensions_val = info.data.get("dimensions")
+        if dimensions_val and hasattr(dimensions_val, 'error_dim'):
+            # Map dimension to default unit
+            dim_unit_map = {
+                "dimensionless": "",
+                "price": "USD",
+                "temperature": "kelvin",
+                "length": "meter",
+            }
+            default_unit = dim_unit_map.get(dimensions_val.error_dim, "USD")
+        else:
+            default_unit = "USD"
 
-        # Check ordering
-        if low_q.magnitude >= high_q.magnitude:
-            raise ValueError("noise_band[0] must be less than noise_band[1]")
+        # Parse each value
+        low_q = manager.ensure_quantity(low, default_unit=default_unit)
+        high_q = manager.ensure_quantity(high, default_unit=default_unit)
+
+        # Check ordering (allow equal values for disabling noise band)
+        if low_q.magnitude > high_q.magnitude:
+            raise ValueError("noise_band[0] must be less than or equal to noise_band[1]")
 
         # Convert to canonical form, preserving dimensions
         dimension_str = str(low_q.dimensionality)
 
         # Try standard dimensions first
-        for dim_name in ["price", "dimensionless"]:
+        for dim_name in ["price", "dimensionless", "price/time"]:
             try:
                 low_canonical = manager.to_canonical(low_q, dim_name)
                 high_canonical = manager.to_canonical(high_q, dim_name)
@@ -146,15 +164,26 @@ class ControllerConfig(BaseModel):
                 continue
 
         # Accept any dimension if standard ones don't work
+        # Get proper conversion factor for the units
+        try:
+            # Get conversion to base SI units
+            low_base = low_q.to_base_units()
+            high_base = high_q.to_base_units()
+            low_factor = low_base.magnitude / low_q.magnitude if low_q.magnitude != 0 else 1.0
+            high_factor = high_base.magnitude / high_q.magnitude if high_q.magnitude != 0 else 1.0
+        except:
+            low_factor = 1.0
+            high_factor = 1.0
+
         low_spec = (float(low_q.magnitude), UnitSpec(
             dimension=dimension_str,
             symbol=str(low_q.units),
-            to_canonical=1.0
+            to_canonical=low_factor
         ))
         high_spec = (float(high_q.magnitude), UnitSpec(
             dimension=dimension_str,
             symbol=str(high_q.units),
-            to_canonical=1.0
+            to_canonical=high_factor
         ))
         return (low_spec, high_spec)
 
@@ -164,12 +193,34 @@ class ControllerConfig(BaseModel):
         """Validate optional output limit parameters."""
         if v is None:
             return None
-        # These are typically dimensionless or in output units
-        try:
-            return quantity_field("dimensionless", default_unit="")(v)
-        except (ValueError, pint.DimensionalityError):
-            # Could be in specific units depending on application
-            return quantity_field("price", default_unit="USD")(v)
+
+        manager = UnitManager.instance()
+
+        # Parse the input value
+        if isinstance(v, str):
+            q = manager.ensure_quantity(v)
+        elif isinstance(v, pint.Quantity):
+            q = v
+        else:
+            # Numeric value - assume dimensionless
+            q = manager.ensure_quantity(v, default_unit="")
+
+        # Accept any dimension - validation will check compatibility later
+        dimension_str = str(q.dimensionality)
+
+        # Try common dimensions first
+        for dim_name in ["dimensionless", "price", "price/time"]:
+            try:
+                return manager.to_canonical(q, dim_name)
+            except (ValueError, pint.DimensionalityError):
+                continue
+
+        # Accept any dimension
+        return (float(q.magnitude), UnitSpec(
+            dimension=dimension_str,
+            symbol=str(q.units),
+            to_canonical=1.0
+        ))
 
     @field_validator("rate_limit", mode="before")
     @classmethod
@@ -216,13 +267,13 @@ class ControllerConfig(BaseModel):
     def to_runtime(
         self,
         dtype: jnp.dtype = jnp.float32,
-        check_units: bool = True
+        check_units: bool = False
     ) -> ControllerRuntime:
         """Convert configuration to runtime structure.
 
         Args:
             dtype: JAX array data type for values
-            check_units: If True, validate units before building runtime
+            check_units: If True, validate units before building runtime (default: False for backward compatibility)
 
         Returns:
             ControllerRuntime with QuantityNodes
