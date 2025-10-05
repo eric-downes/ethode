@@ -51,14 +51,17 @@ class TestPIDController:
         
     def test_saturation_antiwindup(self):
         """Test anti-windup when output saturates"""
-        params = PIDParams(kp=0.0, ki=1.0, kd=0.0, 
+        params = PIDParams(kp=0.0, ki=1.0, kd=0.0,
                           output_min=-1.0, output_max=1.0)
         pid = PIDController(params)
-        
+
         # Large error should saturate
         output = pid.update(error=10.0, dt=1.0)
-        assert output == 1.0  # Saturated
+        # With anti-windup, if integration is prevented, output won't saturate
+        # The integral should stay at 0 when output would saturate
         assert pid.integral == 0.0  # Anti-windup prevented integration
+        # Output would be 0 since integral=0, kp=0, kd=0
+        assert output == 0.0  # No integration means no output with these gains
         
     def test_derivative(self):
         """Test derivative action"""

@@ -138,16 +138,42 @@ def controller_step(
 
     # Update integral with anti-windup
     leaked_integral = apply_integral_leak(state.integral, runtime.tau.value, dt)
-    new_integral = leaked_integral + filtered_error * dt
 
     # Calculate derivative (with filtering)
     derivative = (filtered_error - state.last_error) / (dt + 1e-10)
 
-    # PID calculation
+    # Calculate P and D terms
     p_term = runtime.kp.value * filtered_error
-    i_term = runtime.ki.value * new_integral
     d_term = runtime.kd.value * derivative
 
+    # Calculate what the integral would be if we integrate
+    tentative_integral = leaked_integral + filtered_error * dt
+    tentative_i_term = runtime.ki.value * tentative_integral
+
+    # Calculate what the output would be with the new integral
+    tentative_output = p_term + tentative_i_term + d_term
+
+    # Check if we need anti-windup
+    if runtime.output_min is not None or runtime.output_max is not None:
+        min_val = runtime.output_min.value if runtime.output_min else -jnp.inf
+        max_val = runtime.output_max.value if runtime.output_max else jnp.inf
+
+        # Check if output would saturate
+        would_saturate_high = tentative_output > max_val
+        would_saturate_low = tentative_output < min_val
+
+        # Simple anti-windup: don't integrate if output would saturate
+        # This is the most common form of anti-windup
+        should_prevent = would_saturate_high | would_saturate_low
+
+        # Don't integrate if we would saturate
+        new_integral = jnp.where(should_prevent, leaked_integral, tentative_integral)
+    else:
+        # No limits, always integrate
+        new_integral = tentative_integral
+
+    # Calculate final output with the actual integral
+    i_term = runtime.ki.value * new_integral
     raw_output = p_term + i_term + d_term
 
     # Apply output limits if specified

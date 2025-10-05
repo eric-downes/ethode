@@ -9,7 +9,10 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 import jax
 import jax.numpy as jnp
+import jax.lax as lax
 import numpy as np
+import penzai as pz
+from penzai.core import struct
 
 from .types import TimeScalar, PriceScalar, to_time_scalar, to_price_scalar
 from .units import UnitManager
@@ -116,34 +119,264 @@ class FlatWindowTWAP:
         return to_time_scalar(time_span)
 
 
+# ============================================================================
+# JAX Functional TWAP Implementation
+# ============================================================================
+
+@struct.pytree_dataclass
+class TWAPState(struct.Struct):
+    """Immutable TWAP state for JAX transformations.
+
+    Attributes:
+        times: Array of observation timestamps [shape: (max_obs,)]
+        prices: Array of observed prices [shape: (max_obs,)]
+        count: Number of valid observations stored [shape: ()]
+        head: Next insertion index in circular buffer [shape: ()]
+    """
+    times: jax.Array
+    prices: jax.Array
+    count: jax.Array
+    head: jax.Array
+
+    @classmethod
+    def zeros(cls, max_observations: int) -> 'TWAPState':
+        """Create an empty TWAP state."""
+        return cls(
+            times=jnp.zeros(max_observations),
+            prices=jnp.zeros(max_observations),
+            count=jnp.array(0, dtype=jnp.int32),
+            head=jnp.array(0, dtype=jnp.int32)
+        )
+
+
+@struct.pytree_dataclass
+class TWAPRuntime(struct.Struct):
+    """Immutable TWAP configuration for JAX operations.
+
+    Attributes:
+        window_size: Window duration in seconds
+        max_observations: Maximum buffer size
+    """
+    window_size: float
+    max_observations: int
+
+
+def twap_update(
+    state: TWAPState,
+    runtime: TWAPRuntime,
+    price: jax.Array,
+    dt: jax.Array
+) -> tuple[TWAPState, jax.Array]:
+    """Pure functional TWAP update.
+
+    Args:
+        state: Current TWAP state
+        runtime: TWAP configuration
+        price: New price observation
+        dt: Time since last observation
+
+    Returns:
+        Tuple of (new_state, current_twap)
+    """
+    # Calculate current time
+    current_time = jnp.where(
+        state.count > 0,
+        state.times[(state.head - 1) % runtime.max_observations] + dt,
+        0.0
+    )
+
+    # Update circular buffer
+    new_times = state.times.at[state.head].set(current_time)
+    new_prices = state.prices.at[state.head].set(price)
+    new_head = (state.head + 1) % runtime.max_observations
+    new_count = jnp.minimum(state.count + 1, runtime.max_observations)
+
+    # Create new state
+    new_state = TWAPState(
+        times=new_times,
+        prices=new_prices,
+        count=new_count,
+        head=new_head
+    )
+
+    # Calculate TWAP
+    twap = _calculate_twap(new_state, runtime, current_time)
+
+    return new_state, twap
+
+
+def _calculate_twap(
+    state: TWAPState,
+    runtime: TWAPRuntime,
+    current_time: jax.Array
+) -> jax.Array:
+    """Calculate TWAP from state (pure function).
+
+    Args:
+        state: TWAP state
+        runtime: TWAP configuration
+        current_time: Current timestamp
+
+    Returns:
+        Time-weighted average price
+    """
+    # Determine valid observations within window
+    cutoff_time = current_time - runtime.window_size
+
+    # Create mask for valid observations
+    # An observation is valid if:
+    # 1. Its index is < count (it contains real data)
+    # 2. Its time is >= cutoff_time (it's within the window)
+    indices = jnp.arange(runtime.max_observations)
+    has_data = indices < state.count
+    in_window = state.times >= cutoff_time
+    valid_mask = has_data & in_window
+
+    num_valid = jnp.sum(valid_mask)
+
+    # Handle edge cases
+    return lax.cond(
+        num_valid == 0,
+        lambda: jnp.array(0.0),
+        lambda: lax.cond(
+            num_valid == 1,
+            lambda: _single_observation_twap(state, valid_mask),
+            lambda: _multi_observation_twap(state, valid_mask, runtime.max_observations)
+        )
+    )
+
+
+def _single_observation_twap(state: TWAPState, valid_mask: jax.Array) -> jax.Array:
+    """TWAP for single observation (just return that price)."""
+    return jnp.sum(state.prices * valid_mask) / jnp.sum(valid_mask)
+
+
+def _multi_observation_twap(
+    state: TWAPState,
+    valid_mask: jax.Array,
+    max_obs: int
+) -> jax.Array:
+    """Calculate weighted average for multiple observations.
+
+    Uses trapezoidal integration over time intervals.
+    """
+    # Get sorted indices by time (for valid observations)
+    # This ensures we process observations in chronological order
+    sorted_indices = jnp.argsort(state.times)
+
+    # Apply mask to sorted indices
+    sorted_times = state.times[sorted_indices]
+    sorted_prices = state.prices[sorted_indices]
+    sorted_valid = valid_mask[sorted_indices]
+
+    # Calculate weighted sum using scan
+    def scan_fn(carry, inputs):
+        prev_time, prev_price, total_weighted, total_time = carry
+        curr_time, curr_price, is_valid = inputs
+
+        # Calculate interval (only if both observations are valid)
+        dt = jnp.where(
+            is_valid,
+            curr_time - prev_time,
+            0.0
+        )
+
+        # Average price in interval
+        avg_price = (prev_price + curr_price) / 2.0
+
+        # Update totals (only if current is valid)
+        new_weighted = total_weighted + jnp.where(is_valid, avg_price * dt, 0.0)
+        new_time = total_time + jnp.where(is_valid, dt, 0.0)
+
+        # Update previous (only if current is valid)
+        new_prev_time = jnp.where(is_valid, curr_time, prev_time)
+        new_prev_price = jnp.where(is_valid, curr_price, prev_price)
+
+        return (new_prev_time, new_prev_price, new_weighted, new_time), None
+
+    # Find first valid observation to initialize
+    first_valid_idx = jnp.argmax(sorted_valid)
+    init_time = sorted_times[first_valid_idx]
+    init_price = sorted_prices[first_valid_idx]
+
+    # Run scan from second observation onwards
+    (_, _, total_weighted, total_time), _ = lax.scan(
+        scan_fn,
+        (init_time, init_price, 0.0, 0.0),
+        (sorted_times[1:], sorted_prices[1:], sorted_valid[1:])
+    )
+
+    # Return weighted average
+    return jnp.where(
+        total_time > 0,
+        total_weighted / total_time,
+        init_price  # If no time intervals, return the single price
+    )
+
+
+def twap_scan(
+    runtime: TWAPRuntime,
+    init_state: TWAPState,
+    prices: jax.Array,
+    dts: jax.Array
+) -> tuple[TWAPState, jax.Array]:
+    """Apply TWAP update over a sequence of observations using scan.
+
+    Args:
+        runtime: TWAP configuration
+        init_state: Initial state
+        prices: Array of prices [shape: (n,)]
+        dts: Array of time deltas [shape: (n,)]
+
+    Returns:
+        Tuple of (final_state, twap_values)
+    """
+    def scan_fn(state, inputs):
+        price, dt = inputs
+        new_state, twap = twap_update(state, runtime, price, dt)
+        return new_state, twap
+
+    return lax.scan(scan_fn, init_state, (prices, dts))
+
+
+# Vectorized version for multiple independent TWAP calculations
+twap_update_vmap = jax.vmap(
+    twap_update,
+    in_axes=(0, None, 0, 0),  # Vectorize over state, price, dt
+    out_axes=(0, 0)
+)
+
+
 @dataclass
 class JAXFlatWindowTWAP:
-    """JAX-compatible flat window TWAP for use in JIT-compiled functions.
+    """JAX-compatible flat window TWAP wrapper.
 
-    This version uses fixed-size arrays suitable for JAX operations.
+    This class provides a convenient object-oriented interface to the
+    functional TWAP implementation. The underlying implementation is
+    pure functional and can be JIT-compiled.
 
     Attributes:
         window_size: Window duration in seconds
         max_observations: Maximum number of observations to store
-        times: Array of observation times
-        prices: Array of observation prices
-        count: Number of valid observations
+        runtime: Immutable configuration
+        state: Current TWAP state (PyTree)
     """
 
     window_size: float
     max_observations: int = 100
-    times: jax.Array = field(init=False)
-    prices: jax.Array = field(init=False)
-    count: jax.Array = field(init=False)
+    runtime: TWAPRuntime = field(init=False)
+    state: TWAPState = field(init=False)
 
     def __post_init__(self):
-        """Initialize JAX arrays."""
-        self.times = jnp.zeros(self.max_observations)
-        self.prices = jnp.zeros(self.max_observations)
-        self.count = jnp.array(0)
+        """Initialize runtime and state."""
+        self.runtime = TWAPRuntime(
+            window_size=self.window_size,
+            max_observations=self.max_observations
+        )
+        self.state = TWAPState.zeros(self.max_observations)
 
     def update(self, price: jax.Array, dt: jax.Array) -> jax.Array:
-        """Add observation and return TWAP (JAX-compatible).
+        """Add observation and return TWAP.
 
         Args:
             price: Price value
@@ -151,81 +384,25 @@ class JAXFlatWindowTWAP:
 
         Returns:
             Current TWAP
+
+        Note:
+            This method updates internal state. For pure functional
+            usage, use twap_update() directly.
         """
-        # Calculate current time
-        current_time = jnp.where(
-            self.count > 0,
-            self.times[self.count - 1] + dt,
-            0.0
-        )
+        self.state, twap = twap_update(self.state, self.runtime, price, dt)
+        return twap
 
-        # Add new observation (circular buffer)
-        idx = self.count % self.max_observations
-        self.times = self.times.at[idx].set(current_time)
-        self.prices = self.prices.at[idx].set(price)
-        self.count = jnp.minimum(self.count + 1, self.max_observations)
+    def reset(self):
+        """Reset to empty state."""
+        self.state = TWAPState.zeros(self.max_observations)
 
-        # Filter observations within window
-        cutoff_time = current_time - self.window_size
-        valid_mask = self.times >= cutoff_time
+    def get_state(self) -> TWAPState:
+        """Get current state (for functional usage)."""
+        return self.state
 
-        # Calculate TWAP using valid observations
-        return self._calculate_twap_jax(valid_mask)
-
-    def _calculate_twap_jax(self, valid_mask: jax.Array) -> jax.Array:
-        """Calculate TWAP using JAX operations.
-
-        Args:
-            valid_mask: Boolean mask for valid observations
-
-        Returns:
-            Time-weighted average price
-        """
-        # Count valid observations
-        num_valid = jnp.sum(valid_mask)
-
-        # Handle edge cases
-        return jax.lax.cond(
-            num_valid == 0,
-            lambda: 0.0,
-            lambda: jax.lax.cond(
-                num_valid == 1,
-                lambda: jnp.sum(self.prices * valid_mask) / num_valid,
-                lambda: self._compute_weighted_average(valid_mask)
-            )
-        )
-
-    def _compute_weighted_average(self, valid_mask: jax.Array) -> jax.Array:
-        """Compute weighted average for multiple observations.
-
-        Args:
-            valid_mask: Boolean mask for valid observations
-
-        Returns:
-            Weighted average price
-        """
-        # Use array slicing to avoid wrap-around from roll
-        # Compare adjacent pairs: [0,1], [1,2], [2,3], etc.
-        times_curr = self.times[:-1]
-        times_next = self.times[1:]
-        prices_curr = self.prices[:-1]
-        prices_next = self.prices[1:]
-
-        # Mask for valid pairs (both current and next must be valid)
-        # Exclude the last element since we're comparing pairs
-        pair_mask = valid_mask[:-1] & valid_mask[1:]
-
-        # Calculate time intervals
-        dt_array = times_next - times_curr
-
-        # Average prices for each interval
-        avg_prices = (prices_curr + prices_next) / 2.0
-
-        # Weighted sum
-        weighted_sum = jnp.sum(avg_prices * dt_array * pair_mask)
-        total_weight = jnp.sum(dt_array * pair_mask)
-
-        return jnp.where(total_weight > 0, weighted_sum / total_weight, 0.0)
+    def set_state(self, state: TWAPState):
+        """Set state (for restoring from functional usage)."""
+        self.state = state
 
 
 def create_twap(window_duration: str, use_jax: bool = False) -> FlatWindowTWAP | JAXFlatWindowTWAP:
@@ -252,3 +429,19 @@ def create_twap(window_duration: str, use_jax: bool = False) -> FlatWindowTWAP |
         return JAXFlatWindowTWAP(window_size=window_seconds)
     else:
         return FlatWindowTWAP(window_size=window_seconds)
+
+
+__all__ = [
+    # Python implementation
+    'FlatWindowTWAP',
+    # JAX functional implementation
+    'TWAPState',
+    'TWAPRuntime',
+    'twap_update',
+    'twap_scan',
+    'twap_update_vmap',
+    # JAX wrapper class
+    'JAXFlatWindowTWAP',
+    # Factory function
+    'create_twap',
+]

@@ -6,7 +6,10 @@ import numpy as np
 import jax.numpy as jnp
 from typing import Tuple
 
-from ethode.twap import FlatWindowTWAP, JAXFlatWindowTWAP, create_twap
+from ethode.twap import (
+    FlatWindowTWAP, JAXFlatWindowTWAP, create_twap,
+    TWAPState, TWAPRuntime, twap_update, twap_scan
+)
 from ethode.noise import (
     noise_barrier,
     noise_barrier_jax,
@@ -93,11 +96,59 @@ class TestTWAP:
         assert twap3.window_size == 30.0
 
     def test_jax_twap(self):
-        """Test JAX-compatible TWAP."""
-        # Skip JAX TWAP for now - needs more complex implementation
-        # The JAX version requires careful handling of mutable state
-        # which is complex with JAX's functional paradigm
-        pytest.skip("JAX TWAP implementation needs refinement")
+        """Test JAX-compatible TWAP with functional implementation."""
+        import jax
+
+        # Test 1: Basic functional update
+        runtime = TWAPRuntime(window_size=10.0, max_observations=10)
+        state = TWAPState.zeros(10)
+
+        # First observation
+        state, twap = twap_update(state, runtime, jnp.array(100.0), jnp.array(1.0))
+        assert float(twap) == 100.0  # Single observation
+
+        # Second observation
+        state, twap = twap_update(state, runtime, jnp.array(110.0), jnp.array(1.0))
+        assert 100.0 <= float(twap) <= 110.0  # Between the two prices
+
+        # Test 2: JIT compilation works
+        jit_update = jax.jit(twap_update, static_argnums=1)
+        state2, twap2 = jit_update(state, runtime, jnp.array(105.0), jnp.array(1.0))
+        assert 100.0 <= float(twap2) <= 110.0
+
+        # Test 3: Window cutoff behavior
+        # Add many observations to exceed window
+        for i in range(15):
+            state, twap = twap_update(state, runtime, jnp.array(120.0 + i), jnp.array(1.0))
+
+        # After >10 seconds, early observations should be excluded
+        assert float(twap) > 115.0  # Should be influenced by recent higher prices
+
+        # Test 4: Scan over multiple observations
+        prices = jnp.array([100.0, 102.0, 104.0, 103.0, 101.0])
+        dts = jnp.ones(5)  # 1 second intervals
+
+        init_state = TWAPState.zeros(10)
+        final_state, twap_values = twap_scan(runtime, init_state, prices, dts)
+
+        # Check that we get reasonable TWAP values
+        assert twap_values.shape == (5,)
+        assert jnp.all(twap_values >= 100.0)
+        assert jnp.all(twap_values <= 104.0)
+
+        # Test 5: Wrapper class still works
+        wrapper = JAXFlatWindowTWAP(window_size=10.0, max_observations=10)
+
+        result1 = wrapper.update(jnp.array(100.0), jnp.array(1.0))
+        assert float(result1) == 100.0
+
+        result2 = wrapper.update(jnp.array(110.0), jnp.array(1.0))
+        assert 100.0 <= float(result2) <= 110.0
+
+        # Test 6: Verify PyTree registration
+        # This will fail if TWAPState isn't properly registered as a PyTree
+        tree_map_test = jax.tree.map(lambda x: x * 2, wrapper.state)
+        assert tree_map_test.count == wrapper.state.count * 2
 
     def test_twap_calculation_accuracy(self):
         """Test TWAP calculation accuracy."""

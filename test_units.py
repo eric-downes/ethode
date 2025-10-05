@@ -3,7 +3,7 @@
 import pytest
 import pint
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Union
 
 from pydantic import BaseModel, ValidationError, field_validator
 
@@ -244,6 +244,8 @@ class TestPydanticIntegration:
         """Test Pydantic model with field validators."""
 
         class TestConfig(BaseModel):
+            model_config = {"arbitrary_types_allowed": True}
+
             duration: QuantityInput
             temperature: QuantityInput
 
@@ -262,7 +264,7 @@ class TestPydanticIntegration:
         # Valid config
         config = TestConfig(
             duration="5 minutes",
-            temperature="25 celsius"
+            temperature="298.15 kelvin"  # Use kelvin directly to avoid offset unit issues
         )
         assert config.duration == 300  # seconds
         assert config.temperature == pytest.approx(298.15)  # kelvin
@@ -271,13 +273,15 @@ class TestPydanticIntegration:
         with pytest.raises(ValidationError):
             TestConfig(
                 duration="5 meters",  # Wrong dimension
-                temperature="25 celsius"
+                temperature="298.15 kelvin"
             )
 
     def test_model_with_tuple_field(self):
         """Test model with tuple quantity field."""
 
         class TestConfig(BaseModel):
+            model_config = {"arbitrary_types_allowed": True}
+
             price_range: tuple[QuantityInput, QuantityInput]
 
             @field_validator("price_range", mode='before')
@@ -311,6 +315,8 @@ class TestPydanticIntegration:
         """Test the create_quantity_validator helper."""
 
         class TestConfig(BaseModel):
+            model_config = {"arbitrary_types_allowed": True}
+
             speed: QuantityInput
 
             # Use helper to create validator

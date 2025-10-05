@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Test that the new PIDController works with legacy code patterns."""
 
+import pytest
 import numpy as np
 from ethode.controller import PIDController, PIDParams
 

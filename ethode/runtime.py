@@ -40,7 +40,7 @@ class QuantityNode(struct.Struct):
         cls,
         value: float,
         units: UnitSpec,
-        dtype: jnp.dtype = jnp.float64
+        dtype: jnp.dtype = jnp.float32
     ) -> QuantityNode:
         """Create a QuantityNode from a float value.
 

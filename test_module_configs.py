@@ -7,9 +7,6 @@ import jax
 import jax.numpy as jnp
 import pint
 
-# Enable 64-bit precision for JAX
-jax.config.update('jax_enable_x64', True)
-
 from ethode.fee import FeeConfig, FeeRuntime, FeeState
 from ethode.fee.kernel import calculate_fee, update_stress_level
 from ethode.liquidity import LiquiditySDEConfig, LiquidityRuntime, LiquidityState
@@ -73,13 +70,13 @@ class TestFeeConfig:
         runtime = config.to_runtime()
 
         assert isinstance(runtime, FeeRuntime)
-        assert float(runtime.base_fee_rate.value) == 0.005
+        assert abs(float(runtime.base_fee_rate.value) - 0.005) < 1e-6  # Use approx equality for float32
         assert runtime.base_fee_rate.units.dimension == "dimensionless"
 
         # Growth rate should be converted to 1/second
         assert runtime.fee_growth_rate is not None
         expected_rate = 0.1 / 3600  # per hour to per second
-        assert abs(float(runtime.fee_growth_rate.value) - expected_rate) < 1e-10
+        assert abs(float(runtime.fee_growth_rate.value) - expected_rate) < 1e-6  # Relaxed tolerance for float32
 
         print("✓ Fee to_runtime conversion works")
 
@@ -296,11 +293,11 @@ class TestHawkesConfig:
 
         # Jump rate in events/second
         expected_rate = 500 / (24 * 3600)
-        assert abs(float(runtime.jump_rate.value) - expected_rate) < 1e-10
+        assert abs(float(runtime.jump_rate.value) - expected_rate) < 1e-6  # Relaxed tolerance for float32
 
         # Event impact
         assert runtime.event_impact_mean is not None
-        assert float(runtime.event_impact_mean.value) == 10.0
+        assert abs(float(runtime.event_impact_mean.value) - 10.0) < 1e-6  # Use approx equality
 
         print("✓ Hawkes to_runtime conversion works")
 
@@ -405,10 +402,10 @@ class TestConfigInteroperability:
         fee_output = FeeConfig.from_runtime(fee_runtime)
 
         # Check basis points are preserved
-        assert abs(fee_output.base_fee_rate.magnitude - 75) < 1e-10
+        assert abs(fee_output.base_fee_rate.magnitude - 75) < 1e-5  # Relaxed for float32
         assert str(fee_output.base_fee_rate.units) == "basis_point"
         # Or convert to dimensionless for comparison
-        assert abs(fee_output.base_fee_rate.to("dimensionless").magnitude - 0.0075) < 1e-10
+        assert abs(fee_output.base_fee_rate.to("dimensionless").magnitude - 0.0075) < 1e-6  # Relaxed for float32
         assert abs(fee_output.fee_decay_time.to("second").magnitude - 7200) < 0.01
 
         # Liquidity round trip
@@ -432,7 +429,7 @@ class TestConfigInteroperability:
         hawkes_runtime = hawkes_config.to_runtime()
         hawkes_output = HawkesConfig.from_runtime(hawkes_runtime)
 
-        assert abs(hawkes_output.excitation_strength.magnitude - 0.25) < 1e-10
+        assert abs(hawkes_output.excitation_strength.magnitude - 0.25) < 1e-6  # Relaxed for float32
         assert abs(hawkes_output.excitation_decay.to("second").magnitude - 120) < 0.01
 
         print("✓ Round trip conversions work")

@@ -45,7 +45,7 @@ class PIDParams:
             "  Old: params = PIDParams(kp=1.0, ki=0.1, kd=0.01)\n"
             "  New: config = ControllerConfig(kp=1.0, ki=0.1, kd=0.01)",
             DeprecationWarning,
-            stacklevel=2
+            stacklevel=3  # Stack: user -> __init__ -> __post_init__
         )
 
     def to_config(self) -> ControllerConfig:
@@ -82,41 +82,52 @@ class PIDController:
 
         Can be called with:
         - PIDParams object: PIDController(params)
+        - ControllerConfig object: PIDController(config) (new API)
         - Individual parameters: PIDController(kp=1.0, ki=0.1, kd=0.01)
         - Mix of both (kwargs override params)
         """
-        warnings.warn(
-            "Legacy PIDController is deprecated and will be removed in v3.0. "
-            "Please use ethode.controller.PIDController (main module) instead. "
-            "The new PIDController has improved unit handling and JAX integration.",
-            DeprecationWarning,
-            stacklevel=2
-        )
+        from ..controller import ControllerConfig
 
-        # Handle different initialization patterns
-        if params is None:
-            params = PIDParams()
+        # Check if we're being called with the new API (ControllerConfig)
+        if isinstance(params, ControllerConfig):
+            # New API: no deprecation warning
+            self.config = params
+            self.params = None  # No PIDParams for new API
+            self.p = None
+        else:
+            # Legacy API: show deprecation warning
+            warnings.warn(
+                "Legacy PIDController is deprecated and will be removed in v3.0. "
+                "Please use ethode.controller.PIDController (main module) instead. "
+                "The new PIDController has improved unit handling and JAX integration.",
+                DeprecationWarning,
+                stacklevel=2
+            )
 
-        # Apply any keyword overrides
-        for key, value in kwargs.items():
-            if hasattr(params, key):
-                setattr(params, key, value)
-            elif key in ('tau_leak', 'error_filter'):
-                # Handle extended API fields
-                if key == 'tau_leak' and value is not None:
-                    params.integral_leak = 1.0 / value if value > 0 else 0.0
-            elif key == 'rate_limit':
-                # Store for later use
-                self.rate_limit = value
-            else:
-                # Store as attribute for compatibility
-                setattr(self, key, value)
+            # Handle different initialization patterns
+            if params is None:
+                params = PIDParams()
 
-        self.p = params
-        self.params = params  # Alias for compatibility
+            # Apply any keyword overrides
+            for key, value in kwargs.items():
+                if hasattr(params, key):
+                    setattr(params, key, value)
+                elif key in ('tau_leak', 'error_filter'):
+                    # Handle extended API fields
+                    if key == 'tau_leak' and value is not None:
+                        params.integral_leak = 1.0 / value if value > 0 else 0.0
+                elif key == 'rate_limit':
+                    # Store for later use
+                    self.rate_limit = value
+                else:
+                    # Store as attribute for compatibility
+                    setattr(self, key, value)
 
-        # Create config and runtime
-        self.config = params.to_config()
+            self.p = params
+            self.params = params  # Alias for compatibility
+
+            # Create config and runtime
+            self.config = params.to_config()
 
         # Add rate limit if specified
         if hasattr(self, 'rate_limit') and self.rate_limit is not None:
@@ -163,15 +174,31 @@ class PIDController:
         self.error_filter = kwargs.get('error_filter', None)
 
         # Direct attribute access for gains (backward compatibility)
-        self.kp = params.kp
-        self.ki = params.ki
-        self.kd = params.kd
+        if self.params is not None:
+            self.kp = self.params.kp
+            self.ki = self.params.ki
+            self.kd = self.params.kd
+        else:
+            # Extract from config for new API
+            self.kp = self.config.kp[0] if self.config.kp else 0.0
+            self.ki = self.config.ki[0] if self.config.ki else 0.0
+            self.kd = self.config.kd[0] if self.config.kd else 0.0
 
         # Bounds and limits
-        self.output_min = params.output_min if not np.isinf(params.output_min) else None
-        self.output_max = params.output_max if not np.isinf(params.output_max) else None
-        self.tau_leak = 1.0 / params.integral_leak if params.integral_leak > 0 else None
-        self.noise_threshold = params.noise_threshold
+        if self.params is not None:
+            self.output_min = self.params.output_min if not np.isinf(self.params.output_min) else None
+            self.output_max = self.params.output_max if not np.isinf(self.params.output_max) else None
+        else:
+            # Extract from config for new API
+            self.output_min = self.config.output_min[0] if self.config.output_min else None
+            self.output_max = self.config.output_max[0] if self.config.output_max else None
+        if self.params is not None:
+            self.tau_leak = 1.0 / self.params.integral_leak if self.params.integral_leak > 0 else None
+            self.noise_threshold = self.params.noise_threshold
+        else:
+            # Extract from config for new API
+            self.tau_leak = self.config.tau[0] if self.config.tau else None
+            self.noise_threshold = self.config.noise_band[0] if self.config.noise_band else 0.0
 
     def update(self, error: float, dt: float) -> float:
         """Update controller and return output.
@@ -186,6 +213,16 @@ class PIDController:
         # Apply error filter if provided (legacy support)
         if self.error_filter is not None:
             error = self.error_filter(error)
+
+        # Check if integral was manually set (backward compatibility)
+        if abs(self.integral - float(self.state.integral)) > 1e-10:
+            # Integral was manually changed, update the JAX state
+            self.state = ControllerState(
+                integral=jnp.array(self.integral),
+                last_error=self.state.last_error,
+                last_output=self.state.last_output,
+                time=self.state.time
+            )
 
         # Convert to JAX arrays
         error_jax = jnp.array(float(error))

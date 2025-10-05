@@ -12,6 +12,13 @@ from .runtime import (
 )
 from .controller import ControllerConfig, ControllerConfigOutput, controller_step
 
+# Import legacy items for backward compatibility
+from .legacy import (
+    U, ETH, Yr, One, mag, wmag, output,
+    dataclass, field, AutoDefault, Params, Sim,
+    FinDiffParams, FinDiffSim, ODESim
+)
+
 __all__ = [
     # Units
     'UnitManager',
@@ -31,4 +38,8 @@ __all__ = [
     'ControllerConfig',
     'ControllerConfigOutput',
     'controller_step',
+    # Legacy (deprecated)
+    'U', 'ETH', 'Yr', 'One', 'mag', 'wmag', 'output',
+    'dataclass', 'field', 'AutoDefault', 'Params', 'Sim',
+    'FinDiffParams', 'FinDiffSim', 'ODESim',
 ]

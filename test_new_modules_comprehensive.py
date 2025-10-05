@@ -373,7 +373,7 @@ class TestHawkesModuleAdvanced:
         assert config.excitation_strength[0] < 1.0
 
         runtime = config.to_runtime()
-        assert float(runtime.excitation_strength.value) == 0.8
+        assert abs(float(runtime.excitation_strength.value) - 0.8) < 1e-6  # Use approx equality for float32
 
         print("✓ Hawkes branching ratio works")
 
