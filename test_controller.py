@@ -23,9 +23,9 @@ class TestControllerConfig:
             noise_band=("0.001 USD", "0.003 USD"),
         )
 
-        # Check values were parsed and stored with their units
-        # With the schema-based approach, values are stored as-is
-        assert config.kp[0] == 0.2  # 0.2 / day stored as magnitude
+        # Check values were parsed and stored as CANONICAL values
+        # kp="0.2 / day" → 0.2 / 86400 seconds = 2.31e-6 Hz (canonical)
+        assert config.kp[0] == pytest.approx(0.2 / 86400)  # Canonical value in Hz
         assert config.tau[0] == pytest.approx(7 * 86400)  # 7 days in seconds
 
     def test_create_with_floats(self):

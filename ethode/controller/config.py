@@ -96,16 +96,18 @@ class ControllerConfig(BaseModel):
         # Get the actual dimensions and conversion factor
         dimension_str = str(q.dimensionality)
 
-        # Try to get conversion factor to base units
+        # Convert to base units to get canonical value
         try:
             base_q = q.to_base_units()
+            canonical_value = float(base_q.magnitude)
             to_canonical = float(base_q.magnitude / q.magnitude) if q.magnitude != 0 else 1.0
         except:
+            canonical_value = float(q.magnitude)
             to_canonical = 1.0
 
         # Create a UnitSpec that preserves the actual dimensions
-        # This allows any dimension to be used, with validation happening later
-        return (float(q.magnitude), UnitSpec(
+        # Return CANONICAL value (not raw magnitude) for correct runtime scaling
+        return (canonical_value, UnitSpec(
             dimension=dimension_str if dimension_str != "dimensionless" else "dimensionless",
             symbol=str(q.units),
             to_canonical=to_canonical
@@ -166,21 +168,26 @@ class ControllerConfig(BaseModel):
         # Accept any dimension if standard ones don't work
         # Get proper conversion factor for the units
         try:
-            # Get conversion to base SI units
+            # Get conversion to base SI units to get canonical values
             low_base = low_q.to_base_units()
             high_base = high_q.to_base_units()
+            low_canonical = float(low_base.magnitude)
+            high_canonical = float(high_base.magnitude)
             low_factor = low_base.magnitude / low_q.magnitude if low_q.magnitude != 0 else 1.0
             high_factor = high_base.magnitude / high_q.magnitude if high_q.magnitude != 0 else 1.0
         except:
+            low_canonical = float(low_q.magnitude)
+            high_canonical = float(high_q.magnitude)
             low_factor = 1.0
             high_factor = 1.0
 
-        low_spec = (float(low_q.magnitude), UnitSpec(
+        # Return CANONICAL values (not raw magnitudes) for correct runtime scaling
+        low_spec = (low_canonical, UnitSpec(
             dimension=dimension_str,
             symbol=str(low_q.units),
             to_canonical=low_factor
         ))
-        high_spec = (float(high_q.magnitude), UnitSpec(
+        high_spec = (high_canonical, UnitSpec(
             dimension=dimension_str,
             symbol=str(high_q.units),
             to_canonical=high_factor
@@ -215,11 +222,20 @@ class ControllerConfig(BaseModel):
             except (ValueError, pint.DimensionalityError):
                 continue
 
-        # Accept any dimension
-        return (float(q.magnitude), UnitSpec(
+        # Accept any dimension - convert to canonical (base SI units)
+        try:
+            base_q = q.to_base_units()
+            canonical_value = float(base_q.magnitude)
+            to_canonical = float(base_q.magnitude / q.magnitude) if q.magnitude != 0 else 1.0
+        except:
+            canonical_value = float(q.magnitude)
+            to_canonical = 1.0
+
+        # Return CANONICAL value (not raw magnitude) for correct runtime scaling
+        return (canonical_value, UnitSpec(
             dimension=dimension_str,
             symbol=str(q.units),
-            to_canonical=1.0
+            to_canonical=to_canonical
         ))
 
     @field_validator("rate_limit", mode="before")
