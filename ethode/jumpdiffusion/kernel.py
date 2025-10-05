@@ -15,6 +15,9 @@ from ..jumpprocess import JumpProcessState
 from ..jumpprocess.kernel import generate_next_jump_time
 from ..hawkes import HawkesRuntime
 
+# Mode 2 buffer size: Fixed small buffer for online Hawkes event generation
+MODE2_BUFFER_SIZE = 100
+
 
 def integrate_step(
     runtime: JumpDiffusionRuntime,
@@ -346,7 +349,6 @@ def simulate(
     from ..jumpprocess.runtime import JumpProcessState
 
     t_start, t_end = t_span
-    MODE2_BUFFER_SIZE = 100  # Fixed small buffer for Mode 2
 
     # Tolerance for time comparisons to avoid spurious iterations from diffrax roundoff
     TIME_ATOL = 1e-9
@@ -533,17 +535,25 @@ def simulate(
     )
 
     # Post-simulation check: Mode 2 buffer overflow detection
+    # Use debug callback to work with JIT compilation
     if mode == 2:
-        final_idx_buffer = int(final_state.jump_buffer.next_index)
-        buffer_capacity = int(final_state.jump_buffer.count)
+        def check_buffer_overflow(idx, capacity):
+            """Callback to check buffer overflow (JIT-compatible)."""
+            idx_val = int(idx)
+            cap_val = int(capacity)
+            if idx_val >= cap_val - 1:
+                raise RuntimeError(
+                    f"Mode 2 buffer overflow: Simulation exhausted {cap_val}-element buffer. "
+                    f"This indicates extremely rapid jumps or pathological simulation. "
+                    f"Possible causes: (1) Intensity too high, (2) Stuck in loop, (3) Bug in kernel. "
+                    f"Consider: Reducing excitation_strength, checking lambda_0_fn, or using Mode 1."
+                )
 
-        if final_idx_buffer >= buffer_capacity - 1:
-            raise RuntimeError(
-                f"Mode 2 buffer overflow: Simulation exhausted {buffer_capacity}-element buffer. "
-                f"This indicates extremely rapid jumps or pathological simulation. "
-                f"Possible causes: (1) Intensity too high, (2) Stuck in loop, (3) Bug in kernel. "
-                f"Consider: Reducing excitation_strength, checking lambda_0_fn, or using Mode 1."
-            )
+        jax.debug.callback(
+            check_buffer_overflow,
+            final_state.jump_buffer.next_index,
+            final_state.jump_buffer.count
+        )
 
     return final_times, final_states
 
