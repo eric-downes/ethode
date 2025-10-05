@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Union, Tuple, Optional, Any
 import warnings
 
+import numpy as np
 import jax
 import jax.numpy as jnp
 import pint
@@ -763,4 +764,137 @@ class HawkesAdapter:
             'event_count': int(self.state.event_count),
             'last_event_time': float(self.state.last_event_time),
             'cumulative_impact': float(self.state.cumulative_impact),
+        }
+
+
+class JumpProcessAdapter:
+    """High-level adapter for jump processes with stateful API.
+
+    This is the primary high-level API for jump process usage.
+
+    Example:
+        >>> config = JumpProcessConfig(
+        ...     process_type='poisson',
+        ...     rate="100 / day",
+        ...     seed=42
+        ... )
+        >>> adapter = JumpProcessAdapter(config)
+        >>>
+        >>> # Sequential usage
+        >>> for t in range(100):
+        ...     jump_occurred = adapter.step(t * 0.1, dt=0.1)
+        ...     if jump_occurred:
+        ...         # Handle event
+        ...         pass
+        >>>
+        >>> # Batch generation
+        >>> jump_times = adapter.generate_jumps(0.0, 10.0)
+
+    Args:
+        config: JumpProcessConfig instance
+        check_units: Whether to validate dimensional consistency (default: True)
+
+    Attributes:
+        config: The JumpProcessConfig used
+        runtime: JAX-ready runtime structure
+        state: Current JumpProcessState
+    """
+
+    def __init__(
+        self,
+        config: 'JumpProcessConfig',
+        *,
+        check_units: bool = True
+    ):
+        from .jumpprocess.config import JumpProcessConfig
+        from .jumpprocess.runtime import JumpProcessState
+        from .jumpprocess.kernel import generate_next_jump_time
+
+        self.config = config
+        self.runtime = config.to_runtime(check_units=check_units)
+        self._current_seed = config.seed if config.seed is not None else 0
+        self.state = JumpProcessState.zero(
+            seed=self._current_seed,
+            start_time=0.0
+        )
+
+        # Initialize first jump time from t=0
+        self.state, _ = generate_next_jump_time(
+            self.runtime, self.state, jnp.array(0.0)
+        )
+
+    def step(self, current_time: float, dt: float) -> bool:
+        """
+        Step forward in time, check if jump occurred.
+
+        Updates internal state.
+
+        Args:
+            current_time: Current time
+            dt: Time step
+
+        Returns:
+            True if jump occurred in [current_time, current_time + dt)
+        """
+        from .jumpprocess.kernel import step
+
+        self.state, occurred = step(
+            self.runtime,
+            self.state,
+            jnp.array(float(current_time)),
+            jnp.array(float(dt))
+        )
+        return bool(occurred)
+
+    def generate_jumps(self, t_start: float, t_end: float) -> np.ndarray:
+        """
+        Generate all jump times in interval [t_start, t_end).
+
+        Args:
+            t_start: Start time
+            t_end: End time
+
+        Returns:
+            Numpy array of jump times
+        """
+        from .jumpprocess.kernel import generate_jumps_in_interval
+
+        jumps = generate_jumps_in_interval(
+            self.runtime,
+            t_start,
+            t_end,
+            seed=self._current_seed
+        )
+        return np.array(jumps)
+
+    def reset(self, seed: Optional[int] = None, start_time: float = 0.0):
+        """Reset state to initial conditions.
+
+        Args:
+            seed: Random seed (uses config seed if None)
+            start_time: Time to start from (default 0.0)
+        """
+        from .jumpprocess.runtime import JumpProcessState
+        from .jumpprocess.kernel import generate_next_jump_time
+
+        seed = seed if seed is not None else self.config.seed
+        seed = seed if seed is not None else 0
+        self._current_seed = seed
+        self.state = JumpProcessState.zero(seed, start_time)
+
+        # Generate first jump
+        self.state, _ = generate_next_jump_time(
+            self.runtime, self.state, jnp.array(start_time)
+        )
+
+    def get_expected_rate(self) -> float:
+        """Get expected event rate (events per unit time)."""
+        return float(self.runtime.rate.value)
+
+    def get_state(self) -> dict:
+        """Get current state as dictionary."""
+        return {
+            'last_jump_time': float(self.state.last_jump_time),
+            'next_jump_time': float(self.state.next_jump_time),
+            'event_count': int(self.state.event_count),
         }

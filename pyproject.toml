@@ -23,3 +23,9 @@ dev = [
     "pytest-cov>=5.0.0",
     "mypy>=1.11.0",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselected by default)",
+]
+addopts = "-m 'not slow'"

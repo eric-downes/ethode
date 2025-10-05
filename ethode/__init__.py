@@ -42,11 +42,19 @@ from .hawkes import (
     HawkesState,
     generate_event,
 )
+from .jumpprocess import (
+    JumpProcessConfig,
+    JumpProcessConfigOutput,
+    JumpProcessRuntime,
+    JumpProcessState,
+    generate_jumps_in_interval,
+)
 from .adapters import (
     ControllerAdapter,
     FeeAdapter,
     LiquidityAdapter,
     HawkesAdapter,
+    JumpProcessAdapter,
 )
 from .simulation import (
     Simulation,
@@ -113,11 +121,18 @@ __all__ = [
     'HawkesRuntime',
     'HawkesState',
     'generate_event',
+    # JumpProcess (core tier)
+    'JumpProcessConfig',
+    'JumpProcessConfigOutput',
+    'JumpProcessRuntime',
+    'JumpProcessState',
+    'generate_jumps_in_interval',
     # Adapters (high-level tier)
     'ControllerAdapter',
     'FeeAdapter',
     'LiquidityAdapter',
     'HawkesAdapter',
+    'JumpProcessAdapter',
     # Simulation facade
     'Simulation',
     'simulate_controller_step',
