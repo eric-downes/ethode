@@ -149,7 +149,7 @@ class TestPIDController:
         
         # Large error but rate limited
         output = pid.update(error=10.0, dt=1.0)
-        assert abs(output - 0.0) <= 0.1
+        assert abs(output - 0.0) <= 0.1 + 1e-6  # Allow for float precision
         
         # Next update can change by at most rate_limit * dt
         output2 = pid.update(error=10.0, dt=0.5)

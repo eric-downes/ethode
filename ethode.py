@@ -82,10 +82,34 @@ class AutoDefault:
             setattr(cls, name, field(
                     default = DEFAULTS.get(type_, None)))
 
+import warnings
+
 @dataclass
 class Params(AutoDefault):
+    """Legacy parameter base class.
+
+    .. deprecated:: 2.0
+       Use the new unit-aware Config/Runtime pattern instead.
+       See migration guide at docs/migration_guide.md
+    """
     init_conds: tuple[tuple[str,Q], ...]
     tspan: tuple[Q, ...]
+
+    def __post_init__(self):
+        warnings.warn(
+            "Params base class is deprecated and will be removed in v3.0.\n"
+            "Migration path:\n"
+            "1. Create a Pydantic config class with unit-aware fields:\n"
+            "   class MyConfig(BaseModel):\n"
+            "       duration: str = '1 hour'  # Unit-aware strings\n"
+            "       price: float = 100.0      # Or plain floats\n"
+            "2. Add a to_runtime() method to convert to JAX-compatible format\n"
+            "3. Use the runtime structure in your simulation\n"
+            "Examples: ethode.controller.ControllerConfig, ethode.fee.FeeConfig\n"
+            "See docs/migration_guide.md for detailed instructions.",
+            DeprecationWarning,
+            stacklevel=2
+        )
     
 @dataclass
 class Sim(AutoDefault):

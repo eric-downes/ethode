@@ -14,6 +14,9 @@ import pandas as pd
 import numpy as np
 import pint
 
+# Import the new PIDController for backward compatibility
+from ethode.controller import PIDController
+
 Num = np.float64|float|int
 Nums = tuple[Num, ...]
 Q = pint.Quantity
@@ -184,87 +187,7 @@ class Sim(AutoDefault):
                 df[fname] = df[deps].apply(
                     lambda row: getattr(obj, f.__name__)(**row.to_dict()), axis=1)
 
-# PID Controller infrastructure
-@dataclass
-class PIDController:
-    """
-    PID controller with anti-windup, rate limiting, and noise filtering
-    
-    Features:
-    - Proportional, Integral, Derivative control
-    - Output bounds and rate limiting
-    - Anti-windup via integral leak
-    - Noise barrier for error filtering
-    """
-    kp: float = 1.0  # Proportional gain
-    ki: float = 0.0  # Integral gain
-    kd: float = 0.0  # Derivative gain
-    
-    output_min: float = None  # Minimum output
-    output_max: float = None  # Maximum output
-    rate_limit: float = None  # Maximum output change per time
-    
-    tau_leak: float = None  # Integral leak time constant
-    error_filter: Callable[[float], float] = None  # Error preprocessing
-    
-    # Internal state
-    integral: float = field(default=0.0, init=False)
-    last_error: float = field(default=0.0, init=False)
-    last_output: float = field(default=0.0, init=False)
-    
-    def update(self, error: float, dt: float) -> float:
-        """
-        Update controller and return output
-        
-        Args:
-            error: Current error (setpoint - measurement)
-            dt: Time step
-            
-        Returns:
-            Controller output
-        """
-        # Apply error filter if provided
-        if self.error_filter:
-            error = self.error_filter(error)
-            
-        # Update integral with anti-windup
-        self.integral += error * dt
-        if self.tau_leak and self.tau_leak > 0:
-            self.integral *= np.exp(-dt / self.tau_leak)
-            
-        # Calculate derivative (with simple filtering)
-        if dt > 0:
-            derivative = (error - self.last_error) / dt
-        else:
-            derivative = 0.0
-            
-        # PID calculation
-        output = self.kp * error + self.ki * self.integral + self.kd * derivative
-        
-        # Apply output bounds
-        if self.output_min is not None:
-            output = max(output, self.output_min)
-        if self.output_max is not None:
-            output = min(output, self.output_max)
-            
-        # Apply rate limiting
-        if self.rate_limit is not None and self.last_output is not None:
-            max_change = self.rate_limit * dt
-            output = np.clip(output, 
-                           self.last_output - max_change,
-                           self.last_output + max_change)
-                           
-        # Update state
-        self.last_error = error
-        self.last_output = output
-        
-        return output
-    
-    def reset(self):
-        """Reset controller state"""
-        self.integral = 0.0
-        self.last_error = 0.0
-        self.last_output = 0.0
+# PID Controller now imported from new module (see imports at top)
 
 # TWAP (Time-Weighted Average Price) calculator
 @dataclass

@@ -11,7 +11,31 @@ import pandas as pd
 from scipy.integrate import solve_ivp
 import pint
 
-from ethode import Sim, Params, U, Yr, One, mag, wmag
+# Import base classes - these are still in the old ethode.py file
+# We need to be careful about the module/package naming conflict
+import importlib.util
+import sys
+spec = importlib.util.spec_from_file_location("ethode_base", "./ethode.py")
+ethode_base = importlib.util.module_from_spec(spec)
+try:
+    # Register the module in sys.modules BEFORE executing it
+    # This fixes the NoneType error with dataclass decorator
+    sys.modules['ethode_base'] = ethode_base
+    spec.loader.exec_module(ethode_base)
+    Sim = ethode_base.Sim
+    Params = ethode_base.Params
+    U = ethode_base.U
+    Yr = ethode_base.Yr
+    One = ethode_base.One
+    mag = ethode_base.mag
+    wmag = ethode_base.wmag
+except:
+    # Fallback - import directly if the above fails
+    from ethode import Sim, Params, U, Yr, One, mag, wmag
+
+# Import PID controller from new ethode package
+from ethode.controller import PIDController
+from ethode.controller.legacy import PIDParams
 
 # Type aliases
 JumpEvent = Tuple[float, Callable]  # (time, effect_function)
@@ -20,72 +44,19 @@ JumpEvent = Tuple[float, Callable]  # (time, effect_function)
 class StochasticParams(Params):
     """Parameters for stochastic simulations"""
     seed: int = None
-    
+
 @dataclass
 class JumpProcessParams(StochasticParams):
     """Parameters for jump-diffusion processes"""
     jump_rate: float = 100.0  # Events per time unit
     jump_process_type: str = 'poisson'  # 'poisson', 'hawkes', 'deterministic'
-    
-@dataclass 
+
+@dataclass
 class HawkesParams(JumpProcessParams):
     """Parameters for Hawkes (self-exciting) processes"""
     jump_process_type: str = 'hawkes'
     excitation_strength: float = 0.3  # How much each event increases intensity
     excitation_decay: float = 1.0     # Decay timescale for excitation
-    
-@dataclass
-class PIDParams:
-    """General PID controller parameters"""
-    kp: float = 1.0                # Proportional gain
-    ki: float = 0.1                # Integral gain  
-    kd: float = 0.0                # Derivative gain
-    integral_leak: float = 0.0     # Integral decay rate (0 = no leak)
-    output_min: float = -np.inf    # Output bounds
-    output_max: float = np.inf
-    noise_threshold: float = 0.0   # Dead zone threshold
-    
-class PIDController:
-    """General-purpose PID controller with anti-windup and noise rejection"""
-    
-    def __init__(self, params: PIDParams):
-        self.p = params
-        self.integral = 0.0
-        self.last_error = None
-        
-    def update(self, error: float, dt: float) -> float:
-        """Update controller and return output"""
-        # Apply noise threshold (dead zone)
-        if abs(error) < self.p.noise_threshold:
-            error = 0.0
-            
-        # Update integral with leak and anti-windup
-        self.integral *= np.exp(-self.p.integral_leak * dt)
-        self.integral += self.p.ki * error * dt
-        
-        # Calculate derivative (with initialization check)
-        if self.last_error is None:
-            derivative = 0.0
-        else:
-            derivative = (error - self.last_error) / dt if dt > 0 else 0.0
-        self.last_error = error
-        
-        # Calculate output
-        output = self.p.kp * error + self.integral + self.p.kd * derivative
-        
-        # Apply saturation
-        output_clamped = np.clip(output, self.p.output_min, self.p.output_max)
-        
-        # Anti-windup: prevent integral growth when saturated
-        if output != output_clamped:
-            self.integral -= self.p.ki * error * dt  # Undo integration
-            
-        return output_clamped
-    
-    def reset(self):
-        """Reset controller state"""
-        self.integral = 0.0
-        self.last_error = None
 
 class JumpProcess:
     """Base class for jump processes"""

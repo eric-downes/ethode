@@ -1,0 +1,9 @@
+btc = [Bitcoin] = BTC
+max_btc = 20_999_999.9769 * btc = MaxBTC = algorithmic_max_btc
+mega_btc = 1_000_000 * btc = Mbtc = MBTC
+kilo_btc = 1_000 * btc = kbtc = kBTC
+centi_btc = .01 * btc = cbtc = cBTC
+milli_btc = 10 ** -3 * btc = mbtc = mBTC
+micro_btc = 10 ** -6 * btc = ubtc = uBTC
+finney = 0.0000001 * btc
+satoshi = 0.00000001 * btc
