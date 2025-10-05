@@ -72,9 +72,12 @@ class PIDParams:
 class PIDController:
     """Legacy PID controller wrapper for backward compatibility.
 
-    This class provides the old PIDController API while using the new
-    JAX-based implementation internally. It maintains stateful behavior
-    for compatibility with existing code.
+    .. deprecated:: 2.0
+       PIDController is deprecated. Use ControllerAdapter instead.
+
+    This class provides the old PIDController API while delegating to
+    ControllerAdapter internally. It maintains stateful behavior for
+    compatibility with existing code.
     """
 
     def __init__(self, params: Optional[PIDParams] = None, **kwargs):
@@ -87,10 +90,11 @@ class PIDController:
         - Mix of both (kwargs override params)
         """
         from ..controller import ControllerConfig
+        from ..adapters import ControllerAdapter
 
         # Type handling - distinguish between new and legacy API
         if isinstance(params, ControllerConfig):
-            # New API: no deprecation warning
+            # New API: no deprecation warning for ControllerConfig
             self.config = params
             self.params = None  # No PIDParams for new API
             self.p = None
@@ -108,8 +112,8 @@ class PIDController:
             # Legacy API: show deprecation warning
             warnings.warn(
                 "Legacy PIDController is deprecated and will be removed in v3.0. "
-                "Please use ethode.controller.PIDController (main module) instead. "
-                "The new PIDController has improved unit handling and JAX integration.",
+                "Please use ControllerAdapter instead. "
+                "The new ControllerAdapter has improved unit handling and JAX integration.",
                 DeprecationWarning,
                 stacklevel=2
             )
@@ -136,7 +140,7 @@ class PIDController:
             self.p = params
             self.params = params  # Alias for compatibility
 
-            # Create config and runtime
+            # Create config from params
             self.config = params.to_config()
 
         else:
@@ -177,15 +181,13 @@ class PIDController:
             # Store original value for compatibility
             self.rate_limit = rate_limit
 
-            # Rebuild runtime with updated config
-            self.runtime = self.config.to_runtime()
-        else:
-            self.runtime = self.config.to_runtime()
-
-        # Initialize state
-        self.state = ControllerState.zero()
+        # Create ControllerAdapter internally
+        # PIDController is deprecated - skip validation for ALL cases to maintain backward compatibility
+        # (both legacy PIDParams and ControllerConfig may have dimensionless gains)
+        self._adapter = ControllerAdapter(self.config, check_units=False)
 
         # Legacy state access (for backward compatibility)
+        # These sync with _adapter.state
         self.integral = 0.0
         self.last_error = None
         self.last_output = 0.0
@@ -220,6 +222,10 @@ class PIDController:
             self.tau_leak = self.config.tau[0] if self.config.tau else None
             self.noise_threshold = self.config.noise_band[0] if self.config.noise_band else 0.0
 
+        # Expose runtime and state from adapter for compatibility
+        self.runtime = self._adapter.runtime
+        self.state = self._adapter.state
+
     def update(self, error: float, dt: float) -> float:
         """Update controller and return output.
 
@@ -235,63 +241,68 @@ class PIDController:
             error = self.error_filter(error)
 
         # Check if integral was manually set (backward compatibility)
-        if abs(self.integral - float(self.state.integral)) > 1e-10:
-            # Integral was manually changed, update the JAX state
-            self.state = ControllerState(
+        if abs(self.integral - float(self._adapter.state.integral)) > 1e-10:
+            # Integral was manually changed, update adapter's state
+            self._adapter.state = ControllerState(
                 integral=jnp.array(self.integral),
-                last_error=self.state.last_error,
-                last_output=self.state.last_output,
-                time=self.state.time
+                last_error=self._adapter.state.last_error,
+                last_output=self._adapter.state.last_output,
+                time=self._adapter.state.time
             )
 
-        # Convert to JAX arrays
-        error_jax = jnp.array(float(error))
-        dt_jax = jnp.array(float(dt))
+        # Delegate to adapter
+        output = self._adapter.step(error, dt)
 
-        # Run controller step
-        self.state, output = controller_step(
-            self.runtime,
-            self.state,
-            error_jax,
-            dt_jax
-        )
+        # Sync legacy state variables from adapter
+        self.integral = float(self._adapter.state.integral)
+        self.last_error = float(self._adapter.state.last_error)
+        self.last_output = float(self._adapter.state.last_output)
 
-        # Update legacy state variables for backward compatibility
-        self.integral = float(self.state.integral)
-        self.last_error = float(self.state.last_error)
-        self.last_output = float(self.state.last_output)
+        # Sync references to adapter's runtime and state
+        self.state = self._adapter.state
+        self.runtime = self._adapter.runtime
 
         # Return as Python float
         return float(output)
 
     def reset(self):
         """Reset controller state."""
-        self.state = ControllerState.zero()
+        # Delegate to adapter
+        self._adapter.reset()
+
+        # Sync legacy state variables
         self.integral = 0.0
         self.last_error = None
         self.last_output = 0.0
 
+        # Sync references
+        self.state = self._adapter.state
+        self.runtime = self._adapter.runtime
+
     def get_state(self) -> dict:
         """Get current controller state as dictionary."""
-        return {
-            'integral': self.integral,
-            'last_error': self.last_error,
-            'last_output': self.last_output,
-            'time': float(self.state.time)
-        }
+        # Delegate to adapter
+        return self._adapter.get_state()
 
     def set_state(self, integral: float = 0.0, last_error: Optional[float] = None,
                   last_output: float = 0.0):
         """Set controller state (for testing or initialization)."""
-        self.state = ControllerState(
+        # Update adapter's state
+        self._adapter.state = ControllerState(
             integral=jnp.array(integral),
             last_error=jnp.array(last_error if last_error is not None else 0.0),
             last_output=jnp.array(last_output),
-            time=self.state.time
+            time=self._adapter.state.time
         )
+
+        # Sync legacy state variables
         self.integral = integral
         self.last_error = last_error
         self.last_output = last_output
+
+        # Sync references
+        self.state = self._adapter.state
+        self.runtime = self._adapter.runtime
 
     def update_with_diagnostics(self, error: float, dt: float) -> tuple[float, dict]:
         """Update controller and return output with diagnostics.
@@ -307,25 +318,27 @@ class PIDController:
         if self.error_filter is not None:
             error = self.error_filter(error)
 
-        # Convert to JAX arrays
-        error_jax = jnp.array(float(error))
-        dt_jax = jnp.array(float(dt))
+        # Check if integral was manually set (backward compatibility)
+        if abs(self.integral - float(self._adapter.state.integral)) > 1e-10:
+            # Integral was manually changed, update adapter's state
+            self._adapter.state = ControllerState(
+                integral=jnp.array(self.integral),
+                last_error=self._adapter.state.last_error,
+                last_output=self._adapter.state.last_output,
+                time=self._adapter.state.time
+            )
 
-        # Run controller step with diagnostics
-        self.state, output, diagnostics = controller_step_with_diagnostics(
-            self.runtime,
-            self.state,
-            error_jax,
-            dt_jax
-        )
+        # Delegate to adapter
+        output, diag_dict = self._adapter.step_with_diagnostics(error, dt)
 
-        # Update legacy state
-        self.integral = float(self.state.integral)
-        self.last_error = float(self.state.last_error)
-        self.last_output = float(self.state.last_output)
+        # Sync legacy state
+        self.integral = float(self._adapter.state.integral)
+        self.last_error = float(self._adapter.state.last_error)
+        self.last_output = float(self._adapter.state.last_output)
 
-        # Convert diagnostics to Python floats
-        diag_dict = {k: float(v) for k, v in diagnostics.items()}
+        # Sync references
+        self.state = self._adapter.state
+        self.runtime = self._adapter.runtime
 
         return float(output), diag_dict
 
