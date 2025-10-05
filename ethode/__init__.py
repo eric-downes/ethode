@@ -49,12 +49,22 @@ from .jumpprocess import (
     JumpProcessState,
     generate_jumps_in_interval,
 )
+from .jumpdiffusion import (
+    JumpDiffusionConfig,
+    JumpDiffusionConfigOutput,
+    JumpDiffusionRuntime,
+    JumpDiffusionState,
+    integrate_step,
+    apply_jump,
+    simulate,
+)
 from .adapters import (
     ControllerAdapter,
     FeeAdapter,
     LiquidityAdapter,
     HawkesAdapter,
     JumpProcessAdapter,
+    JumpDiffusionAdapter,
 )
 from .simulation import (
     Simulation,
@@ -127,12 +137,21 @@ __all__ = [
     'JumpProcessRuntime',
     'JumpProcessState',
     'generate_jumps_in_interval',
+    # JumpDiffusion (core tier)
+    'JumpDiffusionConfig',
+    'JumpDiffusionConfigOutput',
+    'JumpDiffusionRuntime',
+    'JumpDiffusionState',
+    'integrate_step',
+    'apply_jump',
+    'simulate',
     # Adapters (high-level tier)
     'ControllerAdapter',
     'FeeAdapter',
     'LiquidityAdapter',
     'HawkesAdapter',
     'JumpProcessAdapter',
+    'JumpDiffusionAdapter',
     # Simulation facade
     'Simulation',
     'simulate_controller_step',
