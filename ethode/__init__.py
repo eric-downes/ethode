@@ -21,6 +21,9 @@ from .controller import (
     VELOCITY,
     POSITION,
 )
+from .adapters import (
+    ControllerAdapter,
+)
 
 # Lazy import for legacy API to avoid deprecation warnings on every import
 # Users who need legacy API must explicitly import from ethode.legacy
@@ -59,11 +62,13 @@ __all__ = [
     'SimulationOutput',
     'MarketRuntime',
     'SystemRuntime',
-    # Controller
+    # Controller (core tier)
     'ControllerConfig',
     'ControllerConfigOutput',
     'ControllerDimensions',
     'controller_step',
+    # Adapters (high-level tier)
+    'ControllerAdapter',
     # Dimension schemas
     'DIMENSIONLESS',
     'FINANCIAL',
