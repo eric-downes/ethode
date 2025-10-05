@@ -105,6 +105,101 @@ def update_stress_level(
     )
 
 
+def calculate_fee_with_diagnostics(
+    runtime: FeeRuntime,
+    state: FeeState,
+    transaction_amount: jax.Array,
+    dt: jax.Array
+) -> Tuple[FeeState, jax.Array, dict]:
+    """Calculate fee with diagnostic information.
+
+    Args:
+        runtime: Fee configuration
+        state: Current fee state
+        transaction_amount: Transaction amount in USD
+        dt: Time since last update
+
+    Returns:
+        Tuple of (updated_state, fee_amount, diagnostics)
+
+    Diagnostics include:
+        - base_fee: Fee at base rate (no stress adjustment)
+        - stress_adjustment: Additional fee due to stress
+        - current_rate: Effective fee rate used
+        - stress_level: Current market stress level
+        - accumulated_fees: Total fees accumulated
+        - rate_decayed: Whether rate decayed toward base
+        - rate_grew: Whether rate grew due to stress
+        - min_rate_applied: Whether min rate bound was hit
+        - max_rate_applied: Whether max rate bound was hit
+        - min_amount_applied: Whether min amount bound was hit
+        - max_amount_applied: Whether max amount bound was hit
+
+    Example:
+        >>> runtime = fee_config.to_runtime()
+        >>> state = FeeState.from_base_rate(0.005)
+        >>> new_state, fee, diag = calculate_fee_with_diagnostics(
+        ...     runtime, state, jnp.array(1000.0), jnp.array(0.1)
+        ... )
+        >>> print(f"Fee: ${fee:.2f}")
+        >>> print(f"Stress adjustment: ${diag['stress_adjustment']:.2f}")
+    """
+    # Store initial rate for comparison
+    initial_rate = state.current_fee_rate
+
+    # Call main fee calculation
+    new_state, fee_amount = calculate_fee(runtime, state, transaction_amount, dt)
+
+    # Calculate base fee (what it would be at base rate, no stress)
+    base_rate = float(runtime.base_fee_rate.value)
+    base_fee = float(transaction_amount) * base_rate
+
+    # Calculate stress adjustment
+    stress_adjustment = float(fee_amount) - base_fee
+
+    # Determine if bounds were applied
+    final_rate = float(new_state.current_fee_rate)
+
+    # Check rate bounds
+    min_rate_applied = False
+    max_rate_applied = False
+    if runtime.min_fee_rate is not None:
+        min_rate_applied = abs(final_rate - float(runtime.min_fee_rate.value)) < 1e-7
+    if runtime.max_fee_rate is not None:
+        max_rate_applied = abs(final_rate - float(runtime.max_fee_rate.value)) < 1e-7
+
+    # Check amount bounds
+    min_amount_applied = False
+    max_amount_applied = False
+    if runtime.min_fee_amount is not None:
+        expected_fee = float(transaction_amount) * final_rate
+        min_amount_applied = float(fee_amount) > expected_fee and abs(float(fee_amount) - float(runtime.min_fee_amount.value)) < 1e-6
+    if runtime.max_fee_amount is not None:
+        expected_fee = float(transaction_amount) * final_rate
+        max_amount_applied = float(fee_amount) < expected_fee and abs(float(fee_amount) - float(runtime.max_fee_amount.value)) < 1e-6
+
+    # Check if rate changed
+    rate_decayed = final_rate < float(initial_rate) and runtime.fee_decay_time is not None
+    rate_grew = final_rate > float(initial_rate) and runtime.fee_growth_rate is not None
+
+    # Build diagnostics dictionary
+    diagnostics = {
+        'base_fee': float(base_fee),
+        'stress_adjustment': float(stress_adjustment),
+        'current_rate': float(final_rate),
+        'stress_level': float(new_state.stress_level),
+        'accumulated_fees': float(new_state.accumulated_fees),
+        'rate_decayed': bool(rate_decayed),
+        'rate_grew': bool(rate_grew),
+        'min_rate_applied': bool(min_rate_applied),
+        'max_rate_applied': bool(max_rate_applied),
+        'min_amount_applied': bool(min_amount_applied),
+        'max_amount_applied': bool(max_amount_applied),
+    }
+
+    return new_state, fee_amount, diagnostics
+
+
 def reset_accumulated_fees(state: FeeState) -> Tuple[FeeState, jax.Array]:
     """Reset accumulated fees and return the amount.
 

@@ -21,8 +21,32 @@ from .controller import (
     VELOCITY,
     POSITION,
 )
+from .fee import (
+    FeeConfig,
+    FeeConfigOutput,
+    FeeRuntime,
+    FeeState,
+    calculate_fee,
+)
+from .liquidity import (
+    LiquiditySDEConfig,
+    LiquiditySDEConfigOutput,
+    LiquidityRuntime,
+    LiquidityState,
+    update_liquidity,
+)
+from .hawkes import (
+    HawkesConfig,
+    HawkesConfigOutput,
+    HawkesRuntime,
+    HawkesState,
+    generate_event,
+)
 from .adapters import (
     ControllerAdapter,
+    FeeAdapter,
+    LiquidityAdapter,
+    HawkesAdapter,
 )
 from .simulation import (
     Simulation,
@@ -71,8 +95,29 @@ __all__ = [
     'ControllerConfigOutput',
     'ControllerDimensions',
     'controller_step',
+    # Fee (core tier)
+    'FeeConfig',
+    'FeeConfigOutput',
+    'FeeRuntime',
+    'FeeState',
+    'calculate_fee',
+    # Liquidity (core tier)
+    'LiquiditySDEConfig',
+    'LiquiditySDEConfigOutput',
+    'LiquidityRuntime',
+    'LiquidityState',
+    'update_liquidity',
+    # Hawkes (core tier)
+    'HawkesConfig',
+    'HawkesConfigOutput',
+    'HawkesRuntime',
+    'HawkesState',
+    'generate_event',
     # Adapters (high-level tier)
     'ControllerAdapter',
+    'FeeAdapter',
+    'LiquidityAdapter',
+    'HawkesAdapter',
     # Simulation facade
     'Simulation',
     'simulate_controller_step',
