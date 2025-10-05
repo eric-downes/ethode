@@ -65,6 +65,7 @@ class UnitManager:
         self.canonical_units = {
             "time": self.registry.second,
             "frequency": self.registry.Hz,  # 1/time
+            "1/time": self.registry.Hz,  # Alternative name for frequency
             "length": self.registry.meter,
             "mass": self.registry.kilogram,
             "temperature": self.registry.kelvin,
@@ -112,6 +113,31 @@ class UnitManager:
             self.registry.define('week = 7 * day')
         if not hasattr(self.registry, 'year'):
             self.registry.define('year = 365.25 * day')
+
+        # Financial percentages - basis points
+        try:
+            # Define percent if not already defined
+            if not hasattr(self.registry, 'percent'):
+                self.registry.define('percent = 0.01 = %')
+
+            # Define basis point (1/100th of a percent)
+            if not hasattr(self.registry, 'basis_point'):
+                self.registry.define('basis_point = 0.0001 = bps = bp')
+        except (pint.DefinitionSyntaxError, pint.RedefinitionError):
+            # May already be defined
+            pass
+
+        # Large number prefixes for financial units
+        try:
+            if not hasattr(self.registry, 'million'):
+                self.registry.define('million = 1e6')
+            if not hasattr(self.registry, 'billion'):
+                self.registry.define('billion = 1e9')
+            if not hasattr(self.registry, 'thousand'):
+                self.registry.define('thousand = 1e3 = k')
+        except (pint.DefinitionSyntaxError, pint.RedefinitionError):
+            # May already be defined
+            pass
 
     def load_custom_units(self, paths: Optional[list[Path]] = None) -> None:
         """Load custom unit definitions from files.
@@ -176,6 +202,19 @@ class UnitManager:
         if isinstance(value, pint.Quantity):
             return value
         elif isinstance(value, str):
+            # Handle financial shorthand
+            # Replace M/k/K with proper multipliers for financial contexts
+            if 'USD' in value or '$' in value or 'EUR' in value or 'GBP' in value:
+                import re
+                # Handle patterns like "500k USD" -> "500000 USD"
+                value = re.sub(r'(\d+(?:\.\d+)?)M\s*(USD|EUR|GBP|\$)', r'\g<1>e6 \2', value)
+                value = re.sub(r'(\d+(?:\.\d+)?)k\s*(USD|EUR|GBP|\$)', r'\g<1>e3 \2', value)
+                value = re.sub(r'(\d+(?:\.\d+)?)K\s*(USD|EUR|GBP|\$)', r'\g<1>e3 \2', value)
+                # Alternative: multiply the number directly
+                # This handles patterns without space: "500kUSD"
+                value = re.sub(r'(\d+(?:\.\d+)?)M(USD|EUR|GBP)', r'\g<1>e6 \2', value)
+                value = re.sub(r'(\d+(?:\.\d+)?)k(USD|EUR|GBP)', r'\g<1>e3 \2', value)
+
             # Parse string as quantity
             try:
                 q = self.registry(value)

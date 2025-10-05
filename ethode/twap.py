@@ -204,18 +204,22 @@ class JAXFlatWindowTWAP:
         Returns:
             Weighted average price
         """
-        # Create shifted arrays for pairwise operations
-        times_shifted = jnp.roll(self.times, -1)
-        prices_shifted = jnp.roll(self.prices, -1)
+        # Use array slicing to avoid wrap-around from roll
+        # Compare adjacent pairs: [0,1], [1,2], [2,3], etc.
+        times_curr = self.times[:-1]
+        times_next = self.times[1:]
+        prices_curr = self.prices[:-1]
+        prices_next = self.prices[1:]
 
         # Mask for valid pairs (both current and next must be valid)
-        pair_mask = valid_mask & jnp.roll(valid_mask, -1)
+        # Exclude the last element since we're comparing pairs
+        pair_mask = valid_mask[:-1] & valid_mask[1:]
 
         # Calculate time intervals
-        dt_array = times_shifted - self.times
+        dt_array = times_next - times_curr
 
         # Average prices for each interval
-        avg_prices = (self.prices + prices_shifted) / 2.0
+        avg_prices = (prices_curr + prices_next) / 2.0
 
         # Weighted sum
         weighted_sum = jnp.sum(avg_prices * dt_array * pair_mask)

@@ -95,11 +95,19 @@ class PIDController:
         if hasattr(self, 'rate_limit') and self.rate_limit is not None:
             # Properly construct the rate_limit with UnitSpec using unit conversion
             from ..units import UnitManager
+            import pint
             manager = UnitManager.instance()
 
-            # Convert the rate_limit value to a quantity with units
-            # Assume USD/second if just a float is provided
-            qty = manager.ensure_quantity(f"{self.rate_limit} USD/second", "USD/second")
+            # Handle different input types for rate_limit
+            if isinstance(self.rate_limit, pint.Quantity):
+                # Already a pint Quantity, use directly
+                qty = self.rate_limit
+            elif isinstance(self.rate_limit, str):
+                # String that might contain units
+                qty = manager.ensure_quantity(self.rate_limit, "USD/second")
+            else:
+                # Numeric value - assume USD/second
+                qty = manager.ensure_quantity(f"{self.rate_limit} USD/second", "USD/second")
 
             # Convert to canonical form for price/time dimension
             rate_value, rate_spec = manager.to_canonical(qty, "price/time")
