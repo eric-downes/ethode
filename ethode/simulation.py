@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 import jax
 import jax.numpy as jnp
 
-from .adapters import ControllerAdapter, FeeAdapter, LiquidityAdapter, HawkesAdapter
+from .adapters import ControllerAdapter, FeeAdapter, LiquidityAdapter, HawkesAdapter, JumpProcessAdapter
 from .runtime import ControllerRuntime, ControllerState
 from .controller.kernel import controller_step
 
@@ -58,7 +58,8 @@ class Simulation:
         controller: Optional[ControllerAdapter] = None,
         fee: Optional[FeeAdapter] = None,
         liquidity: Optional[LiquidityAdapter] = None,
-        hawkes: Optional[HawkesAdapter] = None
+        hawkes: Optional[HawkesAdapter] = None,
+        jumpprocess: Optional[JumpProcessAdapter] = None
     ):
         """Initialize simulation with subsystems.
 
@@ -67,11 +68,13 @@ class Simulation:
             fee: FeeAdapter instance (optional)
             liquidity: LiquidityAdapter instance (optional)
             hawkes: HawkesAdapter instance (optional)
+            jumpprocess: JumpProcessAdapter instance (optional)
         """
         self.controller = controller
         self.fee = fee
         self.liquidity = liquidity
         self.hawkes = hawkes
+        self.jumpprocess = jumpprocess
 
         # Validate subsystems
         if controller is not None and not isinstance(controller, ControllerAdapter):
@@ -90,6 +93,10 @@ class Simulation:
             raise TypeError(
                 f"hawkes must be a HawkesAdapter, got {type(hawkes).__name__}"
             )
+        if jumpprocess is not None and not isinstance(jumpprocess, JumpProcessAdapter):
+            raise TypeError(
+                f"jumpprocess must be a JumpProcessAdapter, got {type(jumpprocess).__name__}"
+            )
 
     def step(self, inputs: dict, dt: float) -> dict:
         """Execute one simulation step (stateful).
@@ -102,12 +109,14 @@ class Simulation:
         2. Fee - calculates transaction fees (may use control output)
         3. Liquidity - updates liquidity level (independent)
         4. Hawkes - generates events (independent)
+        5. JumpProcess - generates jump events (independent)
 
         Args:
             inputs: Dictionary with subsystem inputs:
                 - 'error': float - For controller (required if controller exists)
                 - 'market_volatility': float - For fee stress (optional)
                 - 'volume_ratio': float - For fee stress (optional)
+                - 'time': float - Current time (for jumpprocess)
             dt: Time step size
 
         Returns:
@@ -115,7 +124,8 @@ class Simulation:
                 - 'control': float - Controller output (if controller exists)
                 - 'fee': float - Fee amount (if fee exists)
                 - 'liquidity': float - Liquidity level (if liquidity exists)
-                - 'event_occurred': bool - Event flag (if hawkes exists)
+                - 'event_occurred': bool - Hawkes event flag (if hawkes exists)
+                - 'jump_occurred': bool - JumpProcess event flag (if jumpprocess exists)
 
         Example:
             >>> inputs = {'error': 1.0, 'market_volatility': 0.5}
@@ -162,13 +172,19 @@ class Simulation:
             event_occurred = self.hawkes.step(dt)
             outputs['event_occurred'] = event_occurred
 
+        # 5. JumpProcess subsystem (independent jump generation)
+        if self.jumpprocess is not None:
+            current_time = inputs.get('time', 0.0)
+            jump_occurred = self.jumpprocess.step(current_time, dt)
+            outputs['jump_occurred'] = jump_occurred
+
         return outputs
 
     def reset(self):
         """Reset all subsystem states.
 
         Resets each active subsystem to its initial state. Stochastic subsystems
-        (liquidity, hawkes) maintain their current random seeds.
+        (liquidity, hawkes, jumpprocess) maintain their current random seeds.
         """
         if self.controller is not None:
             self.controller.reset()
@@ -178,6 +194,8 @@ class Simulation:
             self.liquidity.reset()
         if self.hawkes is not None:
             self.hawkes.reset()
+        if self.jumpprocess is not None:
+            self.jumpprocess.reset()
 
     def get_state(self) -> dict:
         """Get current state of all subsystems.
@@ -201,6 +219,8 @@ class Simulation:
             state['liquidity'] = self.liquidity.get_state()
         if self.hawkes is not None:
             state['hawkes'] = self.hawkes.get_state()
+        if self.jumpprocess is not None:
+            state['jumpprocess'] = self.jumpprocess.get_state()
 
         return state
 

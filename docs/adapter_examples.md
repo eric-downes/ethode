@@ -12,6 +12,7 @@ This document provides practical examples for using the high-level adapter APIs,
 - [Fee Subsystem](#fee-subsystem)
 - [Liquidity Subsystem](#liquidity-subsystem)
 - [Hawkes Process Subsystem](#hawkes-process-subsystem)
+- [Jump Process Subsystem](#jump-process-subsystem)
 - [Multi-Subsystem Integration](#multi-subsystem-integration)
 
 ---
@@ -1483,6 +1484,336 @@ print("  - α >= 1 would be unstable (explosive)")
 
 ---
 
+## Jump Process Subsystem
+
+### Example 38: Basic Poisson Process
+
+```python
+from ethode import JumpProcessAdapter, JumpProcessConfig
+
+# Configure Poisson jump process
+config = JumpProcessConfig(
+    process_type='poisson',
+    rate="100 / hour",  # Average 100 events per hour
+    seed=42
+)
+
+# Create adapter
+adapter = JumpProcessAdapter(config)
+
+# Check expected rate
+print(f"Expected rate: {adapter.get_expected_rate():.6f} events/sec")
+
+# Simulate step-by-step
+events = []
+for t in range(1000):
+    current_time = t * 0.1
+    dt = 0.1
+    jump_occurred = adapter.step(current_time, dt)
+    if jump_occurred:
+        events.append(current_time)
+
+print(f"\nTotal jumps: {len(events)}")
+print(f"First 10 jump times: {events[:10]}")
+
+# Check state
+state = adapter.get_state()
+print(f"\nNext scheduled jump: {state['next_jump_time']:.2f}s")
+print(f"Event count: {state['event_count']}")
+```
+
+### Example 39: Deterministic Process
+
+```python
+from ethode import JumpProcessAdapter, JumpProcessConfig
+
+# Configure deterministic (periodic) jump process
+config = JumpProcessConfig(
+    process_type='deterministic',
+    rate="10 / second",  # Exactly 10 events per second
+    seed=42
+)
+
+adapter = JumpProcessAdapter(config)
+
+# Jumps occur at exactly regular intervals
+events = []
+for t in range(200):
+    jump_occurred = adapter.step(current_time=t * 0.01, dt=0.01)
+    if jump_occurred:
+        events.append(t * 0.01)
+
+print(f"Total jumps: {len(events)}")
+
+# Check regularity
+if len(events) > 1:
+    import numpy as np
+    intervals = np.diff(events)
+    print(f"Mean interval: {np.mean(intervals):.4f}s")
+    print(f"Std interval: {np.std(intervals):.8f}s (should be ~0)")
+    print(f"First 10 intervals: {intervals[:10]}")
+```
+
+### Example 40: Batch Jump Generation
+
+```python
+from ethode import JumpProcessAdapter, JumpProcessConfig
+
+# High-rate Poisson process
+config = JumpProcessConfig(
+    process_type='poisson',
+    rate="1000 / hour",
+    seed=42
+)
+
+adapter = JumpProcessAdapter(config)
+
+# Generate all jumps in a time interval efficiently
+t_start = 0.0
+t_end = 3600.0  # 1 hour
+
+jumps = adapter.generate_jumps(t_start, t_end)
+
+print(f"Generated {len(jumps)} jumps in [{t_start}, {t_end})")
+print(f"Expected: ~{1000} jumps")
+print(f"First 10 jumps: {jumps[:10]}")
+print(f"Last 10 jumps: {jumps[-10:]}")
+
+# Analyze jump statistics
+if len(jumps) > 1:
+    import numpy as np
+    inter_arrival = np.diff(jumps)
+    print(f"\nInter-arrival statistics:")
+    print(f"  Mean: {np.mean(inter_arrival):.2f}s")
+    print(f"  Std: {np.std(inter_arrival):.2f}s")
+    print(f"  Min: {np.min(inter_arrival):.2f}s")
+    print(f"  Max: {np.max(inter_arrival):.2f}s")
+```
+
+### Example 41: Comparing Poisson vs Deterministic
+
+```python
+from ethode import JumpProcessAdapter, JumpProcessConfig
+import numpy as np
+
+# Same rate, different process types
+rate = "500 / hour"
+
+poisson_config = JumpProcessConfig(
+    process_type='poisson',
+    rate=rate,
+    seed=42
+)
+
+deterministic_config = JumpProcessConfig(
+    process_type='deterministic',
+    rate=rate,
+    seed=42
+)
+
+# Generate jumps
+t_start = 0.0
+t_end = 7200.0  # 2 hours
+
+poisson_adapter = JumpProcessAdapter(poisson_config)
+deterministic_adapter = JumpProcessAdapter(deterministic_config)
+
+poisson_jumps = poisson_adapter.generate_jumps(t_start, t_end)
+deterministic_jumps = deterministic_adapter.generate_jumps(t_start, t_end)
+
+print("Comparison (2-hour window):")
+print(f"Poisson jumps: {len(poisson_jumps)}")
+print(f"Deterministic jumps: {len(deterministic_jumps)}")
+print(f"Expected: ~{1000}")
+
+# Poisson: random intervals
+poisson_intervals = np.diff(poisson_jumps)
+print(f"\nPoisson inter-arrival:")
+print(f"  Mean: {np.mean(poisson_intervals):.2f}s")
+print(f"  Std: {np.std(poisson_intervals):.2f}s (high variability)")
+
+# Deterministic: uniform intervals
+det_intervals = np.diff(deterministic_jumps)
+print(f"\nDeterministic inter-arrival:")
+print(f"  Mean: {np.mean(det_intervals):.2f}s")
+print(f"  Std: {np.std(det_intervals):.8f}s (nearly zero)")
+```
+
+### Example 42: Reset and Multiple Simulations
+
+```python
+from ethode import JumpProcessAdapter, JumpProcessConfig
+
+config = JumpProcessConfig(
+    process_type='poisson',
+    rate="200 / hour",
+    seed=42
+)
+
+adapter = JumpProcessAdapter(config)
+
+# Simulation 1
+print("Simulation 1 (seed=42):")
+jumps1 = adapter.generate_jumps(0.0, 1000.0)
+print(f"  Jumps: {len(jumps1)}")
+
+# Reset with different seed
+adapter.reset(seed=123)
+
+# Simulation 2
+print("\nSimulation 2 (seed=123):")
+jumps2 = adapter.generate_jumps(0.0, 1000.0)
+print(f"  Jumps: {len(jumps2)}")
+print(f"  Different pattern: {len(jumps1) != len(jumps2)}")
+
+# Reset to original seed
+adapter.reset(seed=42)
+
+# Simulation 3 should match Simulation 1
+jumps3 = adapter.generate_jumps(0.0, 1000.0)
+print(f"\nSimulation 3 (seed=42 again):")
+print(f"  Jumps: {len(jumps3)}")
+print(f"  Matches Simulation 1: {len(jumps1) == len(jumps3)}")
+```
+
+### Example 43: Direct JAX Access for Jump Processes
+
+```python
+from ethode import JumpProcessAdapter, JumpProcessConfig
+from ethode.jumpprocess.kernel import step
+import jax
+import jax.numpy as jnp
+
+# Create adapter
+config = JumpProcessConfig(
+    process_type='poisson',
+    rate="100 / hour",
+    seed=42
+)
+adapter = JumpProcessAdapter(config)
+
+# Extract JAX-ready structures
+runtime = adapter.runtime
+initial_state = adapter.state
+
+# Create JIT-compiled step function
+@jax.jit
+def fast_jump_step(state, current_time, dt):
+    return step(runtime, state, current_time, dt)
+
+# Simulate with JAX
+current_time = jnp.array(0.0)
+dt = jnp.array(0.1)
+
+# Single step
+new_state, jump_occurred = fast_jump_step(initial_state, current_time, dt)
+print(f"Jump occurred: {bool(jump_occurred)}")
+print(f"Next jump time: {float(new_state.next_jump_time):.2f}s")
+
+# Batch processing with scan
+times = jnp.arange(0.0, 100.0, 0.1)
+dts = jnp.full(len(times), 0.1)
+
+def scan_fn(state, inputs):
+    t, dt = inputs
+    new_state, occurred = fast_jump_step(state, t, dt)
+    return new_state, occurred
+
+final_state, occurrences = jax.lax.scan(scan_fn, initial_state, (times, dts))
+
+total_jumps = int(jnp.sum(occurrences))
+print(f"\nBatch simulation:")
+print(f"  Total jumps: {total_jumps}")
+print(f"  Jump rate: {total_jumps / 10.0:.2f} jumps/sec")
+```
+
+### Example 44: Statistical Validation
+
+```python
+from ethode import JumpProcessAdapter, JumpProcessConfig
+import numpy as np
+
+# Known rate
+true_rate = 500.0  # per hour
+config = JumpProcessConfig(
+    process_type='poisson',
+    rate=f"{true_rate} / hour",
+    seed=42
+)
+
+adapter = JumpProcessAdapter(config)
+
+# Long simulation
+t_end = 36000.0  # 10 hours
+jumps = adapter.generate_jumps(0.0, t_end)
+
+# Statistical tests
+observed_count = len(jumps)
+expected_count = true_rate * (t_end / 3600.0)
+
+print(f"Statistical Validation:")
+print(f"  Expected jumps: {expected_count:.0f}")
+print(f"  Observed jumps: {observed_count}")
+print(f"  Difference: {abs(observed_count - expected_count):.0f}")
+print(f"  Relative error: {abs(observed_count - expected_count) / expected_count * 100:.2f}%")
+
+# For Poisson process, variance = mean
+print(f"\nPoisson property (variance ≈ mean):")
+print(f"  Expected variance: {expected_count:.0f}")
+print(f"  Observed: {observed_count:.0f}")
+
+# Inter-arrival times should be exponentially distributed
+if len(jumps) > 1:
+    inter_arrivals = np.diff(jumps)
+    expected_mean = 3600.0 / true_rate  # In seconds
+    observed_mean = np.mean(inter_arrivals)
+
+    print(f"\nInter-arrival times:")
+    print(f"  Expected mean: {expected_mean:.3f}s")
+    print(f"  Observed mean: {observed_mean:.3f}s")
+    print(f"  Error: {abs(observed_mean - expected_mean) / expected_mean * 100:.2f}%")
+```
+
+### Example 45: Integration with Simulation
+
+```python
+from ethode import Simulation, JumpProcessAdapter, JumpProcessConfig
+
+# Configure jump process
+jump_config = JumpProcessConfig(
+    process_type='poisson',
+    rate="50 / hour",
+    seed=42
+)
+
+# Create simulation with jump process
+sim = Simulation(
+    jumpprocess=JumpProcessAdapter(jump_config)
+)
+
+# Track jumps over time
+jump_times = []
+for t in range(500):
+    current_time = t * 0.1
+
+    outputs = sim.step({'time': current_time}, dt=0.1)
+
+    if outputs['jump_occurred']:
+        jump_times.append(current_time)
+
+print(f"Total jumps: {len(jump_times)}")
+print(f"Jump rate: {len(jump_times) / 50.0:.2f} jumps/sec")
+print(f"First 10 jump times: {jump_times[:10]}")
+
+# Get state
+state = sim.get_state()
+print(f"\nJump process state:")
+print(f"  Event count: {state['jumpprocess']['event_count']}")
+print(f"  Next jump: {state['jumpprocess']['next_jump_time']:.2f}s")
+```
+
+---
+
 ## Multi-Subsystem Integration
 
 The `Simulation` class orchestrates multiple subsystems together, handling dependencies and execution order automatically.
@@ -1737,7 +2068,8 @@ These examples demonstrate:
 7. **Fee Subsystem**: Dynamic fee calculations with stress-based adjustments
 8. **Liquidity Subsystem**: Stochastic liquidity dynamics with mean reversion
 9. **Hawkes Subsystem**: Self-exciting point processes for event clustering
-10. **Multi-Subsystem**: Orchestrating multiple subsystems together
+10. **Jump Process Subsystem**: Poisson and deterministic jump/event generation
+11. **Multi-Subsystem**: Orchestrating multiple subsystems together
 
 For more information, see:
 - [PID_MIGRATION_GUIDE.md](../PID_MIGRATION_GUIDE.md) - Complete migration guide
@@ -1745,4 +2077,5 @@ For more information, see:
 - [test_fee_adapter.py](../test_fee_adapter.py) - Fee adapter test examples
 - [test_liquidity_adapter.py](../test_liquidity_adapter.py) - Liquidity adapter test examples
 - [test_hawkes_adapter.py](../test_hawkes_adapter.py) - Hawkes adapter test examples
+- [test_jumpprocess_adapter.py](../test_jumpprocess_adapter.py) - Jump process adapter test examples
 - [test_simulation.py](../test_simulation.py) - Simulation test examples
