@@ -1,8 +1,7 @@
 # JumpProcess API Specification for Ethode
 
-**Request from**: rd-sim migration effort
-**Purpose**: Enable discrete event simulation with jump processes in new ethode architecture
-**Priority**: Critical blocker for full rd-sim migration
+**Purpose**: Enable discrete event simulation with jump processes in ethode architecture
+**Priority**: Core subsystem for stochastic process modeling
 **Version**: 3.0 (JAX-native with architectural improvements)
 
 ---
@@ -28,7 +27,7 @@
 
 ## 1. Overview
 
-The rd-sim codebase currently uses `JumpProcess`, `JumpProcessParams`, and `JumpDiffusionSim` from the legacy `stochastic_extensions.py` module. We need equivalent functionality in the new ethode API to support:
+This specification defines the JumpProcess subsystem, providing functionality to support:
 
 1. **Poisson jump processes** - Random events at constant rate
 2. **Deterministic jump processes** - Regular periodic events
@@ -44,9 +43,9 @@ The rd-sim codebase currently uses `JumpProcess`, `JumpProcessParams`, and `Jump
 
 ---
 
-## 2. Current Usage in rd-sim
+## 2. Legacy Code Pattern (Deprecated)
 
-### 2.1 Legacy Code Pattern
+### 2.1 Old stochastic_extensions.py API
 
 **Jump process generation:**
 ```python
@@ -90,14 +89,14 @@ sim = MyModel(params)
 sim.sim()  # Integrates ODEs between jumps, applies jump_effect at each jump
 ```
 
-### 2.2 Specific Use Cases in rd-sim
+### 2.2 Common Use Cases
 
-**Use Case 1: Interest rate drip events** (`rd_interest_model.py`)
-- Continuous: Debt grows continuously via `dD/dt = α * D`
-- Jumps: Periodic "drip" events that update interest rate controller
-- Need: Generate jump times, integrate ODEs between jumps, execute controller at each jump
+**Use Case 1: Periodic control events**
+- Continuous: State evolves continuously via differential equations
+- Jumps: Periodic events that trigger controller updates or parameter changes
+- Need: Generate jump times, integrate ODEs between jumps, execute callbacks at each jump
 
-**Use Case 2: AMM swap events** (`rd_par_discrete_model.py`)
+**Use Case 2: Stochastic transaction events**
 - Continuous: TWAP dynamics evolve continuously
 - Jumps: Random swap events (Poisson or Hawkes) that affect spot price
 - Need: Generate stochastic jump times, apply discrete state changes
@@ -1157,7 +1156,7 @@ def test_jump_diffusion_with_diffrax():
 
 ## 6. Priority & Dependencies
 
-**Priority**: **P0 - Critical blocker** for rd-sim migration
+**Priority**: **P0 - Core subsystem** for stochastic modeling
 
 **Dependencies**:
 - ✅ Existing ethode infrastructure (units, validation, adapters)
@@ -1185,7 +1184,7 @@ def test_jump_diffusion_with_diffrax():
 ### 7.2 Time-Varying Rates
 
 **Decision**: Not in v1, add callback pattern later
-- Current constant-rate is sufficient for rd-sim migration
+- Current constant-rate is sufficient for most use cases
 - Future: Could add `rate_fn: Callable[[float], float]` parameter
 - Maintains backward compatibility
 
@@ -1205,18 +1204,9 @@ def test_jump_diffusion_with_diffrax():
 
 ---
 
-## 8. Migration Impact
+## 8. Benefits Over Legacy stochastic_extensions.py
 
-Once this API is available, rd-sim can migrate:
-
-- ✅ `rd_interest_model.py` - Interest rate drip events
-- ✅ `rd_par_discrete_model.py` - AMM swaps, redemptions, borrowing
-- ✅ All test files using jump processes
-- ✅ Scripts using stochastic simulations
-
-**Unblocks**: ~8 files in rd-sim, ~50% of migration effort
-
-**Key Improvements Over Legacy**:
+**Key Improvements**:
 - Full JAX integration (JIT, grad, vmap)
 - Better unit handling
 - Differentiable simulations
@@ -1361,8 +1351,11 @@ print(f"Final error: {error:.4f}")
 
 ---
 
-## 10. Contact
+## 10. Status
 
-Questions or clarifications needed? Contact rd-sim team or create issue in rd-sim repo.
+**Implementation status**: ✅ Complete as of v2.0
 
-**Timeline requested**: Ideally within 1 week to unblock rd-sim migration.
+All features in this specification have been implemented and tested. See:
+- `ethode/jumpprocess/` for implementation
+- `test_jumpprocess_adapter.py` for comprehensive test suite
+- `docs/adapter_examples.md` for usage examples
