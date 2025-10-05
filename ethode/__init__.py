@@ -24,6 +24,10 @@ from .controller import (
 from .adapters import (
     ControllerAdapter,
 )
+from .simulation import (
+    Simulation,
+    simulate_controller_step,
+)
 
 # Lazy import for legacy API to avoid deprecation warnings on every import
 # Users who need legacy API must explicitly import from ethode.legacy
@@ -69,6 +73,9 @@ __all__ = [
     'controller_step',
     # Adapters (high-level tier)
     'ControllerAdapter',
+    # Simulation facade
+    'Simulation',
+    'simulate_controller_step',
     # Dimension schemas
     'DIMENSIONLESS',
     'FINANCIAL',
