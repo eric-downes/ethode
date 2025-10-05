@@ -123,6 +123,51 @@ class Simulation:
 
         return state
 
+    def scan(
+        self,
+        errors: jax.Array,
+        dts: jax.Array
+    ) -> Tuple[jax.Array, ControllerState]:
+        """Convenience wrapper for jax.lax.scan over a sequence of steps.
+
+        This method efficiently processes a batch of error/dt pairs using JAX's
+        scan operation. It automatically updates the internal controller state
+        to the final state after processing all steps.
+
+        Args:
+            errors: Array of error values [n_steps]
+            dts: Array of time steps [n_steps]
+
+        Returns:
+            Tuple of (outputs, final_state) where:
+                - outputs: Array of control outputs [n_steps]
+                - final_state: Final controller state after all steps
+
+        Example:
+            >>> errors = jnp.array([1.0, 0.5, 0.2, 0.0, -0.1])
+            >>> dts = jnp.array([0.1, 0.1, 0.1, 0.1, 0.1])
+            >>> outputs, final_state = sim.scan(errors, dts)
+            >>> # Internal state is now updated to final_state
+        """
+        # Define step function for scan
+        def step_fn(state, inputs):
+            error, dt = inputs
+            new_state, output = controller_step(
+                self.controller.runtime, state, error, dt
+            )
+            return new_state, output
+
+        # Run scan starting from current state
+        initial_state = self.controller.state
+        final_state, outputs = jax.lax.scan(
+            step_fn, initial_state, (errors, dts)
+        )
+
+        # Update internal controller state
+        self.controller.state = final_state
+
+        return outputs, final_state
+
 
 def simulate_controller_step(
     runtime: ControllerRuntime,
