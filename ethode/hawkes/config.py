@@ -79,6 +79,12 @@ class HawkesConfig(BaseModel):
         description="Rate of cluster dissipation"
     )
 
+    # Random seed for reproducibility
+    seed: Optional[int] = Field(
+        default=None,
+        description="Random seed for event generation (optional)"
+    )
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # Validators

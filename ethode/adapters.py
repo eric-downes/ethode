@@ -39,6 +39,8 @@ __all__ = [
     'FeeAdapter',
     'LiquidityAdapter',
     'HawkesAdapter',
+    'JumpProcessAdapter',
+    'JumpDiffusionAdapter',
 ]
 
 
@@ -898,3 +900,257 @@ class JumpProcessAdapter:
             'next_jump_time': float(self.state.next_jump_time),
             'event_count': int(self.state.event_count),
         }
+
+
+class JumpDiffusionAdapter:
+    """High-level adapter for ODE+Jump simulations with stateful API.
+
+    This is the primary API for hybrid continuous/discrete simulations.
+    Follows the ethode adapter pattern with stateful and functional interfaces.
+
+    Example:
+        >>> # Define dynamics
+        >>> def my_dynamics(t, state, params):
+        ...     x, v = state
+        ...     return jnp.array([v, -params['k'] * x])  # Harmonic oscillator
+        >>>
+        >>> def my_jump(t, state, params):
+        ...     x, v = state
+        ...     return jnp.array([x, -v * 0.9])  # Damped collision
+        >>>
+        >>> # Configure
+        >>> config = JumpDiffusionConfig(
+        ...     initial_state=jnp.array([1.0, 0.0]),
+        ...     dynamics_fn=my_dynamics,
+        ...     jump_effect_fn=my_jump,
+        ...     jump_process=JumpProcessConfig(
+        ...         process_type='poisson',
+        ...         rate="10 / second",
+        ...     ),
+        ...     solver='dopri5',
+        ...     dt_max="0.01 second",
+        ...     params={'k': 1.0},
+        ... )
+        >>>
+        >>> # Stateful API
+        >>> adapter = JumpDiffusionAdapter(config)
+        >>> times, states = adapter.simulate(t_span=(0.0, 10.0))
+        >>>
+        >>> # Or step-by-step
+        >>> adapter.reset()
+        >>> for i in range(100):
+        ...     jump_occurred = adapter.step(t_end=adapter.state.t + 0.1)
+        ...     if jump_occurred:
+        ...         print(f"Jump at t={adapter.state.t}")
+
+    Args:
+        config: JumpDiffusionConfig instance
+        check_units: Whether to validate dimensional consistency
+
+    Attributes:
+        config: The configuration used
+        runtime: JAX-ready runtime structure
+        state: Current simulation state (JumpDiffusionState)
+    """
+
+    def __init__(
+        self,
+        config: 'JumpDiffusionConfig',
+        *,
+        check_units: bool = True
+    ):
+        from .jumpdiffusion.config import JumpDiffusionConfig
+
+        self.config = config
+        self.runtime = config.to_runtime(check_units=check_units)
+
+        # Initialize state immediately for stateful API
+        self._initialize_state(t0=0.0)
+
+    def _initialize_state(self, t0: float = 0.0, seed: Optional[int] = None):
+        """Initialize simulation state with jump buffer.
+
+        Args:
+            t0: Initial time
+            seed: Random seed (uses runtime seed if None)
+        """
+        from .jumpdiffusion.runtime import JumpDiffusionState, ScheduledJumpBuffer
+        from .jumpprocess.runtime import JumpProcessState
+        from .jumpdiffusion.kernel import _generate_poisson_event
+
+        # Use provided seed or runtime seed
+        if seed is None:
+            seed = int(self.runtime.scheduler.seed)
+
+        rng_key = jax.random.PRNGKey(seed)
+        mode = self.runtime.scheduler.mode
+        initial_state = self.config.initial_state
+
+        # Default buffer size for stateful API (can be extended dynamically)
+        STATEFUL_BUFFER_SIZE = 10000
+
+        if mode == 0:
+            # Mode 0 (Poisson): Lazy generation
+            key1, key2 = jax.random.split(rng_key)
+            first_event, new_key = _generate_poisson_event(
+                self.runtime.scheduler.scheduled,
+                jnp.array(t0),
+                key1
+            )
+
+            event_times = jnp.full(STATEFUL_BUFFER_SIZE, jnp.inf, dtype=initial_state.dtype)
+            event_times = event_times.at[0].set(first_event)
+
+            jump_buffer = ScheduledJumpBuffer(
+                event_times=event_times,
+                count=jnp.array(STATEFUL_BUFFER_SIZE, dtype=jnp.int32),
+                next_index=jnp.array(0, dtype=jnp.int32),
+                rng_key=new_key,
+                cumulative_excitation=jnp.array(0.0, dtype=initial_state.dtype),
+                last_update_time=jnp.array(t0, dtype=initial_state.dtype)
+            )
+
+        elif mode == 1:
+            # Mode 1 (Pre-gen Hawkes): Not supported for stateful API
+            # Requires knowing t_span in advance
+            raise NotImplementedError(
+                "Stateful API (step/reset) not supported for Mode 1 (Pre-generated Hawkes). "
+                "Use simulate() method instead, which requires t_span."
+            )
+
+        else:  # mode == 2
+            # Mode 2 (Online Hawkes): Not yet implemented
+            raise NotImplementedError(
+                "Stateful API (step/reset) not yet implemented for Mode 2 (Online Hawkes). "
+                "Use simulate() method instead."
+            )
+
+        # Create initial state
+        self.state = JumpDiffusionState.zero(
+            initial_state,
+            jump_buffer,
+            t0=t0
+        )
+
+    def simulate(
+        self,
+        t_span: Tuple[float, float],
+        max_steps: int = 100000,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Run full ODE+Jump simulation over time span (functional).
+
+        Saves state at: initial time, each jump time, and final time.
+        Does not modify internal state. For stateful stepping, use step().
+
+        Args:
+            t_span: (t_start, t_end) simulation interval
+            max_steps: Maximum number of steps (safety limit for total saves)
+
+        Returns:
+            (times, states) where:
+            - times: 1D array of time points at jump times + t_end
+            - states: 2D array (n_times, state_dim) with corresponding states
+
+        Note:
+            Internal padding is automatically filtered out. You receive only actual trajectory.
+        """
+        from .jumpdiffusion.kernel import simulate
+
+        times_jax, states_jax = simulate(
+            self.runtime,
+            self.config.initial_state,
+            t_span,
+            max_steps=max_steps,
+        )
+
+        # Filter out padding (keep times <= t_end)
+        mask = times_jax <= t_span[1]
+        return np.array(times_jax[mask]), np.array(states_jax[mask])
+
+    def step(
+        self,
+        t_end: float,
+    ) -> bool:
+        """
+        Take single step: integrate to next jump or t_end (stateful).
+
+        Updates internal self.state.
+
+        Args:
+            t_end: Maximum time to integrate to
+
+        Returns:
+            jump_occurred: True if a jump occurred during this step
+        """
+        from .jumpdiffusion.kernel import integrate_step, apply_jump
+
+        new_state, t_reached = integrate_step(
+            self.runtime,
+            self.state,
+            jnp.array(t_end)
+        )
+
+        # Check if jump occurred
+        idx = new_state.jump_buffer.next_index
+        next_jump_time = new_state.jump_buffer.event_times[idx]
+        jump_occurred = jnp.logical_and(
+            jnp.isclose(new_state.t, next_jump_time, rtol=0, atol=1e-9),
+            new_state.t < t_end
+        )
+
+        # Apply jump if occurred
+        if jump_occurred:
+            new_state = apply_jump(self.runtime, new_state)
+
+        self.state = new_state
+        return bool(jump_occurred)
+
+    def reset(self, t0: float = 0.0, seed: Optional[int] = None):
+        """
+        Reset simulation to initial conditions.
+
+        Args:
+            t0: Initial time
+            seed: New random seed (uses config seed if None)
+
+        Note:
+            Stateful stepping (step/reset) currently only supports Mode 0 (Poisson).
+            For Hawkes processes, use the functional simulate() method instead.
+        """
+        self._initialize_state(t0=t0, seed=seed)
+
+    def get_state(self) -> dict:
+        """
+        Get current simulation state as dictionary.
+
+        Returns:
+            Dictionary with:
+            - 't': current time
+            - 'state': current state vector
+            - 'next_jump_time': time of next scheduled jump (from buffer)
+            - 'step_count': number of ODE steps taken
+            - 'jump_count': number of jumps processed
+        """
+        if self.state is None:
+            raise RuntimeError("State not initialized. Call simulate() or step() first.")
+
+        idx = int(self.state.jump_buffer.next_index)
+        next_jump_time = float(self.state.jump_buffer.event_times[idx])
+
+        return {
+            't': float(self.state.t),
+            'state': np.array(self.state.state),
+            'next_jump_time': next_jump_time,
+            'step_count': int(self.state.step_count),
+            'jump_count': int(self.state.jump_count),
+        }
+
+    def set_state(self, state: 'JumpDiffusionState'):
+        """
+        Set simulation state directly.
+
+        Args:
+            state: JumpDiffusionState to use
+        """
+        self.state = state

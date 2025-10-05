@@ -6,25 +6,9 @@ self-exciting Hawkes point processes.
 
 from __future__ import annotations
 from typing import Optional
-import dataclasses
 import jax
 import jax.numpy as jnp
-
-try:
-    import penzai
-    from penzai import struct
-except ImportError:
-    # Fallback for Penzai import
-    import sys
-
-    class struct:
-        """Mock struct module for fallback."""
-        @staticmethod
-        def pytree_dataclass(cls):
-            return dataclasses.dataclass(frozen=True)(cls)
-
-        Struct = object
-
+from penzai.core import struct
 
 from ..runtime import QuantityNode
 
@@ -34,6 +18,7 @@ class HawkesRuntime(struct.Struct):
     """Runtime Hawkes process parameters for JAX computation.
 
     All fields are QuantityNodes containing JAX arrays with unit metadata.
+    Penzai's @struct.pytree_dataclass automatically registers this as a JAX pytree.
     """
 
     jump_rate: QuantityNode
@@ -51,6 +36,7 @@ class HawkesState(struct.Struct):
     """Runtime state for Hawkes process.
 
     Tracks event history and current intensity.
+    Penzai's @struct.pytree_dataclass automatically registers this as a JAX pytree.
     """
 
     current_intensity: jax.Array    # Current process intensity
