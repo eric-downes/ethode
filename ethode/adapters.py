@@ -960,29 +960,13 @@ class JumpDiffusionAdapter:
         check_units: bool = True
     ):
         from .jumpdiffusion.config import JumpDiffusionConfig
-        from .jumpdiffusion.runtime import JumpDiffusionState
-        from .jumpprocess.runtime import JumpProcessState
-        from .jumpprocess.kernel import generate_next_jump_time
 
         self.config = config
         self.runtime = config.to_runtime(check_units=check_units)
 
-        # Initialize state
-        jump_state_init = JumpProcessState.zero(
-            seed=self.runtime.jump_runtime.seed,
-            start_time=0.0
-        )
-        jump_state_init, _ = generate_next_jump_time(
-            self.runtime.jump_runtime,
-            jump_state_init,
-            jnp.array(0.0)
-        )
-
-        self.state = JumpDiffusionState.zero(
-            self.config.initial_state,
-            jump_state_init,
-            t0=0.0
-        )
+        # State initialization is deferred to simulate() or step()
+        # Each call creates fresh buffer based on mode (lazy vs pre-gen)
+        self.state = None  # Will be initialized on first step() call
 
     def simulate(
         self,
@@ -1063,26 +1047,14 @@ class JumpDiffusionAdapter:
         Args:
             t0: Initial time
             seed: New random seed (uses config seed if None)
+
+        Note:
+            Stateful stepping (step/reset) currently only supports Mode 0 (Poisson).
+            For Hawkes processes, use the functional simulate() method instead.
         """
-        from .jumpdiffusion.runtime import JumpDiffusionState
-        from .jumpprocess.runtime import JumpProcessState
-        from .jumpprocess.kernel import generate_next_jump_time
-
-        seed = seed if seed is not None else self.runtime.jump_runtime.seed
-
-        # Re-initialize jump process state
-        jump_state_init = JumpProcessState.zero(seed=seed, start_time=t0)
-        jump_state_init, _ = generate_next_jump_time(
-            self.runtime.jump_runtime,
-            jump_state_init,
-            jnp.array(t0)
-        )
-
-        self.state = JumpDiffusionState.zero(
-            self.config.initial_state,
-            jump_state_init,
-            t0=t0
-        )
+        # Stateful stepping not yet fully implemented for Hawkes
+        # For now, just clear state - it will be re-initialized on first step()
+        self.state = None
 
     def get_state(self) -> dict:
         """
@@ -1092,14 +1064,20 @@ class JumpDiffusionAdapter:
             Dictionary with:
             - 't': current time
             - 'state': current state vector
-            - 'next_jump_time': time of next scheduled jump
+            - 'next_jump_time': time of next scheduled jump (from buffer)
             - 'step_count': number of ODE steps taken
             - 'jump_count': number of jumps processed
         """
+        if self.state is None:
+            raise RuntimeError("State not initialized. Call simulate() or step() first.")
+
+        idx = int(self.state.jump_buffer.next_index)
+        next_jump_time = float(self.state.jump_buffer.event_times[idx])
+
         return {
             't': float(self.state.t),
             'state': np.array(self.state.state),
-            'next_jump_time': float(self.state.jump_state.next_jump_time),
+            'next_jump_time': next_jump_time,
             'step_count': int(self.state.step_count),
             'jump_count': int(self.state.jump_count),
         }
