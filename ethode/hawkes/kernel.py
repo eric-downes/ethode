@@ -70,7 +70,7 @@ def generate_event(
     state: HawkesState,
     key: jax.Array,
     dt: jax.Array
-) -> Tuple[HawkesState, bool, jax.Array]:
+) -> Tuple[HawkesState, jax.Array, jax.Array]:
     """Check if an event occurs and update state accordingly.
 
     Uses thinning algorithm: event occurs with probability λ(t) * dt
@@ -107,13 +107,15 @@ def generate_event(
         )
 
     # If event occurred, increase intensity (self-excitation)
+    # Formula: Δλ = α / τ where α is branching ratio, τ is decay time
+    # This ensures stationary intensity λ_∞ = λ₀ / (1 - α)
     excitation = float(runtime.excitation_strength.value)
-    base_rate = float(runtime.jump_rate.value)
+    decay_time = float(runtime.excitation_decay.value)
 
-    # Add excitation: λ -> λ + α * λ₀
+    # Add excitation: λ -> λ + (α / τ)
     new_intensity = jnp.where(
         event_occurred,
-        state.current_intensity + excitation * base_rate,
+        state.current_intensity + excitation / decay_time,
         state.current_intensity
     )
 
@@ -130,7 +132,7 @@ def generate_event(
         cumulative_impact=state.cumulative_impact + event_impact,
     )
 
-    return new_state, bool(event_occurred), event_impact
+    return new_state, event_occurred, event_impact
 
 
 def generate_event_with_diagnostics(
@@ -181,10 +183,10 @@ def generate_event_with_diagnostics(
             0.0
         )
 
-    # Self-excitation
+    # Self-excitation: Δλ = α / τ
     excitation = float(runtime.excitation_strength.value)
-    base_rate = float(runtime.jump_rate.value)
-    excitation_added = jnp.where(event_occurred, excitation * base_rate, 0.0)
+    decay_time = float(runtime.excitation_decay.value)
+    excitation_added = jnp.where(event_occurred, excitation / decay_time, 0.0)
 
     new_intensity = state_decayed.current_intensity + excitation_added
 

@@ -10,8 +10,13 @@ import jax
 import jax.numpy as jnp
 from typing import Tuple, Callable, Any
 
-from .runtime import JumpDiffusionRuntime, JumpDiffusionState
+from .runtime import JumpDiffusionRuntime, JumpDiffusionState, ScheduledJumpBuffer
+from ..jumpprocess import JumpProcessState
 from ..jumpprocess.kernel import generate_next_jump_time
+from ..hawkes import HawkesRuntime
+
+# Mode 2 buffer size: Fixed small buffer for online Hawkes event generation
+MODE2_BUFFER_SIZE = 100
 
 
 def integrate_step(
@@ -31,8 +36,9 @@ def integrate_step(
         - updated_state: State after integration
         - time_reached: Actual time reached (min of next_jump_time, t_end)
     """
-    # Determine integration end time
-    next_jump_time = state.jump_state.next_jump_time
+    # Determine integration end time (read from buffer - same for all modes)
+    idx = state.jump_buffer.next_index
+    next_jump_time = state.jump_buffer.event_times[idx]
     t_target = jnp.minimum(next_jump_time, t_end)
 
     # Integrate ODE from state.t to t_target
@@ -60,38 +66,255 @@ def integrate_step(
     return updated_state, t_target
 
 
+def _generate_poisson_event(
+    runtime,
+    current_t: jax.Array,
+    rng_key: jax.Array
+) -> Tuple[float, jax.Array]:
+    """Generate next Poisson event time."""
+    # Create temporary state (only for interface compatibility)
+    temp_state = JumpProcessState(
+        last_jump_time=current_t,
+        next_jump_time=current_t,  # Will be overwritten
+        rng_key=rng_key,
+        event_count=jnp.array(0, dtype=jnp.int32)
+    )
+
+    new_state, next_time = generate_next_jump_time(runtime, temp_state, current_t)
+    return next_time, new_state.rng_key
+
+
+def _default_exponential_decay(E: Any, dt: jax.Array, hawkes: HawkesRuntime) -> Any:
+    """Default excitation decay: E(t+dt) = E(t) * exp(-beta * dt).
+
+    Args:
+        E: Current cumulative excitation (can be pytree)
+        dt: Time since last event
+        hawkes: HawkesRuntime containing excitation_decay parameter
+
+    Returns:
+        Decayed excitation value
+    """
+    beta = hawkes.excitation_decay.value
+    # Handle both scalar and pytree E
+    if isinstance(E, dict):
+        # Pytree case (e.g., power-law with elapsed time)
+        return {k: (v * jnp.exp(-beta * dt) if k == "value" else v) for k, v in E.items()}
+    else:
+        # Scalar case
+        return E * jnp.exp(-beta * dt)
+
+
+def _default_unit_jump(E: Any, hawkes: HawkesRuntime) -> Any:
+    """Default excitation jump: E(t+) = E(t-) + 1.
+
+    Args:
+        E: Cumulative excitation before event (can be pytree)
+        hawkes: HawkesRuntime (unused in default)
+
+    Returns:
+        Excitation after event
+    """
+    if isinstance(E, dict):
+        # Pytree case
+        return {k: (v + 1.0 if k == "value" else v) for k, v in E.items()}
+    else:
+        # Scalar case
+        return E + 1.0
+
+
+def _default_linear_intensity(lambda_0: jax.Array, E: Any, hawkes: HawkesRuntime) -> jax.Array:
+    """Default intensity: lambda(t) = lambda_0 + alpha * E(t).
+
+    Args:
+        lambda_0: State-dependent base rate
+        E: Current cumulative excitation (can be pytree)
+        hawkes: HawkesRuntime containing excitation_strength parameter
+
+    Returns:
+        Current intensity
+    """
+    alpha = hawkes.excitation_strength.value
+    # Extract value from E if it's a pytree
+    E_value = E["value"] if isinstance(E, dict) else E
+    return lambda_0 + alpha * E_value
+
+
+def _generate_hawkes_event_online(
+    scheduler,
+    cumulative_excitation: Any,
+    current_t: jax.Array,
+    ode_state: jax.Array,
+    rng_key: jax.Array,
+    max_rejections: int = 1000
+) -> Tuple[float, jax.Array, Any]:
+    """Generate next Hawkes event using JAX-compatible thinning with bounded loop.
+
+    Uses cumulative excitation accumulator E(t) instead of reconstructing from history.
+    Implements Ogata's thinning algorithm with jax.lax.while_loop.
+
+    Args:
+        scheduler: JumpSchedulerRuntime with static callable fields
+        cumulative_excitation: Current value of E(t) accumulator (can be pytree)
+        current_t: Current simulation time
+        ode_state: Current ODE state vector (for state-dependent λ₀)
+        rng_key: JAX PRNG key
+        max_rejections: Safety limit on thinning iterations
+
+    Returns:
+        Tuple of:
+        - next_event_time: Time of next event (jnp.inf if max_rejections hit)
+        - new_rng_key: Updated PRNG key
+        - updated_excitation: E(t) value at next_event_time
+    """
+    # Get user-provided functions or defaults from static fields
+    lambda_0_fn = scheduler.lambda_0_fn or (lambda s: scheduler.hawkes.jump_rate.value)
+    decay_fn = scheduler.excitation_decay_fn or _default_exponential_decay
+    intensity_fn = scheduler.intensity_fn or _default_linear_intensity
+
+    # Compute state-dependent base rate
+    lambda_0 = lambda_0_fn(ode_state)
+
+    def cond_fn(carry):
+        """Continue while not accepted and iterations < max."""
+        _, _, _, accepted, iter_count = carry
+        return jnp.logical_and(
+            jnp.logical_not(accepted),
+            iter_count < max_rejections
+        )
+
+    def body_fn(carry):
+        """Single thinning iteration: propose candidate, accept/reject."""
+        rng, t_candidate, E_current, _, iter_count = carry
+
+        # Current intensity at candidate time
+        lambda_current = intensity_fn(lambda_0, E_current, scheduler.hawkes)
+
+        # Sample inter-event time using current intensity as upper bound
+        rng, subkey1, subkey2 = jax.random.split(rng, 3)
+        dt = jax.random.exponential(subkey1) / lambda_current
+        t_next = t_candidate + dt
+
+        # Decay excitation to t_next
+        E_next = decay_fn(E_current, dt, scheduler.hawkes)
+
+        # Intensity at proposed time
+        lambda_next = intensity_fn(lambda_0, E_next, scheduler.hawkes)
+
+        # Accept/reject using thinning (accept if λ(t_next) / λ_current >= U)
+        u = jax.random.uniform(subkey2)
+        accepted = u * lambda_current <= lambda_next
+
+        return (rng, t_next, E_next, accepted, iter_count + 1)
+
+    # Run bounded thinning loop
+    init = (rng_key, current_t, cumulative_excitation, False, 0)
+    final_rng, final_t, final_E, final_accepted, final_iter = jax.lax.while_loop(
+        cond_fn, body_fn, init
+    )
+
+    # Fail-safe: if max_rejections hit, return inf (no more events in this simulation)
+    t_event = jnp.where(final_accepted, final_t, jnp.inf)
+
+    return t_event, final_rng, final_E
+
+
 def apply_jump(
     runtime: JumpDiffusionRuntime,
     state: JumpDiffusionState,
 ) -> JumpDiffusionState:
-    """Apply jump effect and generate next jump time.
+    """Apply jump effect and generate next event (mode-dependent).
+
+    This is the ONLY function that differs by mode:
+    - Mode 0: Generate next Poisson event
+    - Mode 1: Advance buffer pointer (events pre-generated)
+    - Mode 2: Generate next Hawkes event with state-dependent λ₀
 
     Args:
         runtime: Runtime configuration
         state: State at jump time (before jump)
 
     Returns:
-        State after jump with new next_jump_time
+        State after jump with next event time
     """
-    # Apply jump effect to state
+    # Apply jump effect to state (same for all modes)
     state_after_jump = runtime.jump_effect_fn(
         state.t,
         state.state,
         runtime.params
     )
 
-    # Generate next jump time
-    jump_state_new, _ = generate_next_jump_time(
-        runtime.jump_runtime,
-        state.jump_state,
-        state.t
-    )
+    # Generate/retrieve next event time based on mode
+    mode = runtime.scheduler.mode
+    next_idx = state.jump_buffer.next_index
+    buffer_capacity = state.jump_buffer.count
 
-    # Update state using dataclasses.replace for Penzai structs
+    if mode == 0:
+        # Mode 0: Poisson - lazy generation
+        next_time, new_key = _generate_poisson_event(
+            runtime.scheduler.scheduled,
+            state.t,
+            state.jump_buffer.rng_key
+        )
+        new_buffer = dataclasses.replace(
+            state.jump_buffer,
+            event_times=state.jump_buffer.event_times.at[next_idx + 1].set(next_time),
+            next_index=next_idx + 1,
+            rng_key=new_key
+        )
+    elif mode == 1:
+        # Mode 1: Pre-generated Hawkes - just advance pointer
+        new_buffer = dataclasses.replace(
+            state.jump_buffer,
+            next_index=next_idx + 1
+        )
+    else:  # mode == 2
+        # Mode 2: Online Hawkes - lazy generation with cumulative excitation
+
+        # Decay excitation from last update to now
+        dt_since_last = state.t - state.jump_buffer.last_update_time
+        decay_fn = runtime.scheduler.excitation_decay_fn or _default_exponential_decay
+        decayed_excitation = decay_fn(
+            state.jump_buffer.cumulative_excitation,
+            dt_since_last,
+            runtime.scheduler.hawkes
+        )
+
+        # Add excitation from this event
+        jump_fn = runtime.scheduler.excitation_jump_fn or _default_unit_jump
+        new_excitation = jump_fn(decayed_excitation, runtime.scheduler.hawkes)
+
+        # Generate next event using cumulative excitation
+        next_time, new_key, final_excitation = _generate_hawkes_event_online(
+            runtime.scheduler,
+            cumulative_excitation=new_excitation,
+            current_t=state.t,
+            ode_state=state.state,  # ← Access current ODE state!
+            rng_key=state.jump_buffer.rng_key,
+            max_rejections=int(runtime.scheduler.hawkes_max_events)
+        )
+
+        # Apply buffer overflow guard: if full, set next_time to inf (stop generating)
+        next_time = jax.lax.cond(
+            next_idx + 1 < buffer_capacity,
+            lambda: next_time,
+            lambda: jnp.inf  # Buffer full - no more events
+        )
+
+        # Update buffer with cumulative excitation fields
+        new_buffer = dataclasses.replace(
+            state.jump_buffer,
+            event_times=state.jump_buffer.event_times.at[next_idx + 1].set(next_time),
+            next_index=next_idx + 1,
+            rng_key=new_key,
+            cumulative_excitation=final_excitation,
+            last_update_time=state.t
+        )
+
     return dataclasses.replace(
         state,
         state=state_after_jump,
-        jump_state=jump_state_new,
+        jump_buffer=new_buffer,
         jump_count=state.jump_count + 1,
     )
 
@@ -130,21 +353,97 @@ def simulate(
     # Tolerance for time comparisons to avoid spurious iterations from diffrax roundoff
     TIME_ATOL = 1e-9
 
-    # Initialize jump process state
-    jump_state_init = JumpProcessState.zero(
-        seed=runtime.jump_runtime.seed,
-        start_time=t_start
-    )
-    jump_state_init, _ = generate_next_jump_time(
-        runtime.jump_runtime,
-        jump_state_init,
-        jnp.array(t_start)
-    )
+    # Initialize RNG key
+    rng_key = jax.random.PRNGKey(int(runtime.scheduler.seed))
 
-    # Initialize simulation state
+    # Initialize jump buffer based on scheduler mode
+    mode = runtime.scheduler.mode
+
+    if mode == 0:
+        # Mode 0 (Poisson): Lazy - initialize empty buffer with first event
+        key1, key2 = jax.random.split(rng_key)
+        first_event, new_key = _generate_poisson_event(
+            runtime.scheduler.scheduled,
+            jnp.array(t_start),
+            key1
+        )
+
+        event_times = jnp.full(max_steps, jnp.inf, dtype=initial_state.dtype)
+        event_times = event_times.at[0].set(first_event)
+
+        jump_buffer = ScheduledJumpBuffer(
+            event_times=event_times,
+            count=jnp.array(max_steps, dtype=jnp.int32),  # Capacity
+            next_index=jnp.array(0, dtype=jnp.int32),
+            rng_key=new_key,
+            cumulative_excitation=jnp.array(0.0, dtype=initial_state.dtype),  # Not used for mode 0
+            last_update_time=jnp.array(t_start, dtype=initial_state.dtype)
+        )
+
+    elif mode == 1:
+        # Mode 1 (Pre-gen Hawkes): Pre-generate all events upfront
+        from ..hawkes.scheduler import generate_schedule
+
+        # Extract float from hawkes_dt to make it static for JIT
+        # (scan requires static length, which depends on dt being static)
+        hawkes_dt_value = float(runtime.scheduler.hawkes_dt)
+
+        events, _ = generate_schedule(
+            runtime.scheduler.hawkes,
+            t_span,
+            hawkes_dt_value,
+            int(runtime.scheduler.hawkes_max_events),
+            int(runtime.scheduler.seed),
+            dtype=initial_state.dtype  # Match dtype to avoid upcasting
+        )
+
+        # Count valid events
+        valid_mask = events < t_end
+        count = jnp.sum(valid_mask.astype(jnp.int32))
+
+        jump_buffer = ScheduledJumpBuffer(
+            event_times=events,
+            count=count,
+            next_index=jnp.array(0, dtype=jnp.int32),
+            rng_key=rng_key,  # Not used for mode 1
+            cumulative_excitation=jnp.array(0.0, dtype=initial_state.dtype),  # Not used for mode 1
+            last_update_time=jnp.array(t_start, dtype=initial_state.dtype)
+        )
+
+    else:  # mode == 2
+        # Mode 2 (Online Hawkes): Lazy generation with cumulative excitation accumulator
+        key1, key2 = jax.random.split(rng_key)
+
+        # Initialize with zero excitation (no past events)
+        initial_excitation = jnp.array(0.0, dtype=initial_state.dtype)
+
+        # Generate first event
+        first_event, new_key, first_excitation = _generate_hawkes_event_online(
+            runtime.scheduler,
+            cumulative_excitation=initial_excitation,
+            current_t=jnp.array(t_start),
+            ode_state=initial_state,
+            rng_key=key1,
+            max_rejections=int(runtime.scheduler.hawkes_max_events)
+        )
+
+        # Mode 2: Fixed buffer size of 100 (small constant for lazy filling)
+        event_times = jnp.full(MODE2_BUFFER_SIZE, jnp.inf, dtype=initial_state.dtype)
+        event_times = event_times.at[0].set(first_event)
+
+        jump_buffer = ScheduledJumpBuffer(
+            event_times=event_times,
+            count=jnp.array(MODE2_BUFFER_SIZE, dtype=jnp.int32),  # Capacity (not max_events!)
+            next_index=jnp.array(0, dtype=jnp.int32),
+            rng_key=new_key,
+            cumulative_excitation=first_excitation,
+            last_update_time=jnp.array(t_start, dtype=initial_state.dtype)
+        )
+
+    # Initialize simulation state with buffer
     sim_state = JumpDiffusionState.zero(
         initial_state,
-        jump_state_init,
+        jump_buffer,
         t0=t_start
     )
 
@@ -168,8 +467,10 @@ def simulate(
 
             # Check if we hit a jump
             # Use tolerance for both jump detection and end-time check to avoid roundoff issues
+            idx = new_state.jump_buffer.next_index
+            next_jump_time = new_state.jump_buffer.event_times[idx]
             jump_occurred = jnp.logical_and(
-                jnp.isclose(new_state.t, new_state.jump_state.next_jump_time, rtol=0, atol=TIME_ATOL),
+                jnp.isclose(new_state.t, next_jump_time, rtol=0, atol=TIME_ATOL),
                 new_state.t < t_end - TIME_ATOL
             )
 
@@ -232,6 +533,27 @@ def simulate(
         None,
         length=max_steps
     )
+
+    # Post-simulation check: Mode 2 buffer overflow detection
+    # Use debug callback to work with JIT compilation
+    if mode == 2:
+        def check_buffer_overflow(idx, capacity):
+            """Callback to check buffer overflow (JIT-compatible)."""
+            idx_val = int(idx)
+            cap_val = int(capacity)
+            if idx_val >= cap_val - 1:
+                raise RuntimeError(
+                    f"Mode 2 buffer overflow: Simulation exhausted {cap_val}-element buffer. "
+                    f"This indicates extremely rapid jumps or pathological simulation. "
+                    f"Possible causes: (1) Intensity too high, (2) Stuck in loop, (3) Bug in kernel. "
+                    f"Consider: Reducing excitation_strength, checking lambda_0_fn, or using Mode 1."
+                )
+
+        jax.debug.callback(
+            check_buffer_overflow,
+            final_state.jump_buffer.next_index,
+            final_state.jump_buffer.count
+        )
 
     return final_times, final_states
 

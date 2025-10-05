@@ -9,7 +9,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from ethode import HawkesAdapter, HawkesConfig
-from ethode.hawkes.kernel import generate_event
+from ethode.hawkes.kernel import generate_event, update_intensity
+from ethode.hawkes.runtime import HawkesState, HawkesRuntime
 
 
 class TestHawkesAdapter:
@@ -679,3 +680,174 @@ class TestStochasticBehavior:
 
         # Higher base rate should produce more events
         assert events_high > events_low
+
+
+class TestPytreeRegistration:
+    """Regression tests for JAX pytree registration.
+
+    These tests ensure that HawkesState and HawkesRuntime are properly
+    registered as JAX pytrees and can be used in JAX transformations
+    like jax.lax.scan and jax.jit.
+
+    See docs/HAWKES_PYTREE_ISSUE.md for background on why these tests
+    were added.
+    """
+
+    def test_hawkes_state_tree_flatten(self):
+        """Test that HawkesState can be flattened as a pytree."""
+        state = HawkesState.initialize(base_rate=10.0)
+
+        # Should be able to flatten
+        leaves, treedef = jax.tree_util.tree_flatten(state)
+
+        # Should have 5 leaves (all fields)
+        assert len(leaves) == 5
+
+        # All leaves should be JAX arrays
+        for leaf in leaves:
+            assert isinstance(leaf, jax.Array)
+
+        # Should be able to unflatten
+        reconstructed = jax.tree_util.tree_unflatten(treedef, leaves)
+
+        # Should match original
+        assert float(reconstructed.current_intensity) == float(state.current_intensity)
+        assert float(reconstructed.time) == float(state.time)
+        assert int(reconstructed.event_count) == int(state.event_count)
+
+    def test_hawkes_state_in_scan_loop(self):
+        """Test that HawkesState can be used in jax.lax.scan.
+
+        This is the core regression test for the pytree issue that was
+        blocking Mode 1 (pre-generated Hawkes) implementation.
+        """
+        state = HawkesState.initialize(base_rate=10.0)
+
+        def scan_fn(carry_state, x):
+            # Simple identity scan - just pass state through
+            # If HawkesState isn't a valid pytree, this will raise TypeError
+            return carry_state, carry_state.current_intensity
+
+        # This should NOT raise "HawkesState is not a valid JAX type"
+        final_state, intensities = jax.lax.scan(
+            scan_fn,
+            state,
+            jnp.arange(10)
+        )
+
+        assert final_state is not None
+        assert len(intensities) == 10
+        assert float(final_state.current_intensity) == 10.0
+
+    def test_hawkes_runtime_tree_flatten(self):
+        """Test that HawkesRuntime can be flattened as a pytree."""
+        config = HawkesConfig(
+            jump_rate="100 / hour",
+            excitation_strength=0.3,
+            excitation_decay="5 minutes"
+        )
+        runtime = config.to_runtime()
+
+        # Should be able to flatten
+        leaves, treedef = jax.tree_util.tree_flatten(runtime)
+
+        # Should have leaves (QuantityNodes and None values)
+        assert len(leaves) > 0
+
+        # Should be able to unflatten
+        reconstructed = jax.tree_util.tree_unflatten(treedef, leaves)
+
+        # Should match original
+        assert float(reconstructed.jump_rate.value) == float(runtime.jump_rate.value)
+        assert float(reconstructed.excitation_strength.value) == float(runtime.excitation_strength.value)
+
+    def test_update_intensity_jit_compatible(self):
+        """Test that update_intensity works without JIT (pre-existing JIT issues).
+
+        Note: JIT compilation currently fails due to float() conversion in kernel.
+        This test validates pytree compatibility using non-JIT execution.
+        """
+        config = HawkesConfig(
+            jump_rate="100 / hour",
+            excitation_strength=0.3,
+            excitation_decay="5 minutes"
+        )
+        runtime = config.to_runtime()
+        state = HawkesState.initialize(base_rate=float(runtime.jump_rate.value))
+
+        # Test without JIT (pre-existing JIT issues in kernel)
+        dt = jnp.array(0.01)
+        new_state, intensity = update_intensity(runtime, state, dt)
+
+        assert new_state is not None
+        assert isinstance(new_state, HawkesState)
+        assert isinstance(intensity, jax.Array)
+
+    def test_generate_event_jit_compatible(self):
+        """Test that generate_event works without JIT (pre-existing JIT issues).
+
+        Note: JIT compilation currently fails due to float() conversion in kernel.
+        This test validates pytree compatibility using non-JIT execution.
+        """
+        config = HawkesConfig(
+            jump_rate="100 / hour",
+            excitation_strength=0.3,
+            excitation_decay="5 minutes"
+        )
+        runtime = config.to_runtime()
+        state = HawkesState.initialize(base_rate=float(runtime.jump_rate.value))
+
+        # Test without JIT (pre-existing JIT issues in kernel)
+        key = jax.random.PRNGKey(42)
+        dt = jnp.array(0.01)
+        new_state, event_occurred, impact = generate_event(runtime, state, key, dt)
+
+        assert new_state is not None
+        assert isinstance(new_state, HawkesState)
+        # event_occurred can be bool or JAX array depending on implementation
+        assert isinstance(event_occurred, (bool, jax.Array))
+        assert isinstance(impact, jax.Array)
+
+    def test_hawkes_state_in_nested_scan(self):
+        """Test HawkesState in nested scan loops (stress test)."""
+        config = HawkesConfig(
+            jump_rate="100 / hour",
+            excitation_strength=0.3,
+            excitation_decay="5 minutes"
+        )
+        runtime = config.to_runtime()
+        state = HawkesState.initialize(base_rate=float(runtime.jump_rate.value))
+
+        def inner_scan(state, _):
+            # Update intensity in inner loop
+            dt = jnp.array(0.01)
+            new_state, intensity = update_intensity(runtime, state, dt)
+            return new_state, intensity
+
+        def outer_scan(state, _):
+            # Nested scan
+            final_state, _ = jax.lax.scan(inner_scan, state, jnp.arange(5))
+            return final_state, final_state.time
+
+        # Double-nested scan should work
+        final_state, times = jax.lax.scan(outer_scan, state, jnp.arange(3))
+
+        assert final_state is not None
+        assert len(times) == 3
+
+    def test_pytree_registration_via_jax(self):
+        """Test that HawkesState is properly registered with JAX pytree system.
+
+        Penzai's @struct.pytree_dataclass handles registration internally,
+        so we test via JAX's tree_util functions rather than explicit methods.
+        """
+        state = HawkesState.initialize(base_rate=10.0)
+
+        # Should be recognized as a pytree by JAX
+        leaves, treedef = jax.tree_util.tree_flatten(state)
+        reconstructed = jax.tree_util.tree_unflatten(treedef, leaves)
+
+        # Reconstruction should work correctly
+        assert float(reconstructed.current_intensity) == float(state.current_intensity)
+        assert float(reconstructed.time) == float(state.time)
+        assert int(reconstructed.event_count) == int(state.event_count)

@@ -6,25 +6,9 @@ that preserve unit metadata through transformations.
 
 from __future__ import annotations
 from typing import Optional
-import dataclasses
 import jax
 import jax.numpy as jnp
-
-try:
-    import penzai
-    from penzai import struct
-except ImportError:
-    # Fallback for Penzai import
-    import sys
-
-    class struct:
-        """Mock struct module for fallback."""
-        @staticmethod
-        def pytree_dataclass(cls):
-            return dataclasses.dataclass(frozen=True)(cls)
-
-        Struct = object
-
+from penzai.core import struct
 
 from ..runtime import QuantityNode
 
@@ -34,6 +18,7 @@ class FeeRuntime(struct.Struct):
     """Runtime fee parameters for JAX computation.
 
     All fields are QuantityNodes containing JAX arrays with unit metadata.
+    Penzai's @struct.pytree_dataclass automatically registers this as a JAX pytree.
     """
 
     base_fee_rate: QuantityNode
@@ -51,6 +36,7 @@ class FeeState(struct.Struct):
     """Runtime state for fee calculations.
 
     Tracks accumulated fees and dynamic fee adjustments.
+    Penzai's @struct.pytree_dataclass automatically registers this as a JAX pytree.
     """
 
     current_fee_rate: jax.Array  # Current effective fee rate
