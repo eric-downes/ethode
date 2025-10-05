@@ -382,10 +382,14 @@ def simulate(
         # Mode 1 (Pre-gen Hawkes): Pre-generate all events upfront
         from ..hawkes.scheduler import generate_schedule
 
+        # Extract float from hawkes_dt to make it static for JIT
+        # (scan requires static length, which depends on dt being static)
+        hawkes_dt_value = float(runtime.scheduler.hawkes_dt)
+
         events, _ = generate_schedule(
             runtime.scheduler.hawkes,
             t_span,
-            runtime.scheduler.hawkes_dt,
+            hawkes_dt_value,
             int(runtime.scheduler.hawkes_max_events),
             int(runtime.scheduler.seed),
             dtype=initial_state.dtype  # Match dtype to avoid upcasting

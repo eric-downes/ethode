@@ -1,6 +1,7 @@
 """Hawkes event schedule pre-computation for JumpDiffusion integration."""
 
 from typing import Tuple
+import math
 import jax
 import jax.numpy as jnp
 
@@ -11,7 +12,7 @@ from .kernel import update_intensity, generate_event
 def generate_schedule(
     runtime: HawkesRuntime,
     t_span: Tuple[float, float],
-    dt: jax.Array,
+    dt: float,
     max_events: int,
     seed: int,
     dtype: jnp.dtype = jnp.float32
@@ -43,9 +44,13 @@ def generate_schedule(
     base_rate = float(runtime.jump_rate.value)
 
     # Clamp dt to avoid pathological cases (0, inf, or extremely large values)
-    # Minimum dt floor: 1e-6 * (t_end - t_start) to avoid division issues
+    # Compute n_steps as static Python int for JIT compatibility (scan requires static length)
     dt_floor = 1e-6 * (t_end - t_start)
-    dt_clamped = jnp.maximum(dt, dt_floor)
+    dt_clamped_static = max(dt, dt_floor)
+    n_steps = int(math.ceil((t_end - t_start) / dt_clamped_static))
+
+    # Convert to JAX array for use in scan body
+    dt_clamped = jnp.array(dt_clamped_static)
 
     # Initialize state and PRNG
     state = HawkesState.initialize(base_rate)
@@ -54,9 +59,6 @@ def generate_schedule(
     # Pre-allocate event buffer with matching dtype
     event_times = jnp.full(max_events, jnp.inf, dtype=dtype)
     event_count = jnp.array(0, dtype=jnp.int32)
-
-    # Calculate number of time steps using clamped dt
-    n_steps = int(jnp.ceil((t_end - t_start) / dt_clamped))
 
     def scan_fn(carry, _):
         """Single time step: update intensity, check for event."""

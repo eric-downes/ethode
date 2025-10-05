@@ -454,17 +454,8 @@ class TestMode1Units:
 class TestMode1Performance:
     """Test Mode 1 performance characteristics."""
 
-    @pytest.mark.skip(reason="ISSUE: generate_schedule uses int(jnp.ceil(...)) which breaks JIT. "
-                             "Needs fix in hawkes/scheduler.py:59")
     def test_mode1_jit_compilation(self):
-        """Test that Mode 1 simulation can be JIT compiled.
-
-        NOTE: This test currently fails due to concretization issue in generate_schedule().
-        The line `n_steps = int(jnp.ceil((t_end - t_start) / dt_clamped))` uses Python's int()
-        on a traced value, which is not allowed in JIT.
-
-        Fix needed: Use `n_steps = jnp.ceil((t_end - t_start) / dt_clamped).astype(int)`
-        """
+        """Test that Mode 1 simulation can be JIT compiled."""
         config = JumpDiffusionConfig(
             initial_state=jnp.array([1.0]),
             dynamics_fn=lambda t, y, p: -0.1 * y,
