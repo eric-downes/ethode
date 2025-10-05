@@ -303,12 +303,14 @@ class TestHawkesConfig:
 
     def test_hawkes_state(self):
         """Test Hawkes state initialization."""
+        from conftest import assert_close
+
         base_rate = 0.01  # events/second
         state = HawkesState.initialize(base_rate)
 
-        assert float(state.current_intensity) == base_rate
-        assert float(state.event_count) == 0
-        assert float(state.time) == 0.0
+        assert_close(state.current_intensity, base_rate)
+        assert_close(state.event_count, 0)
+        assert_close(state.time, 0.0)
 
         print("✓ Hawkes state initialization works")
 

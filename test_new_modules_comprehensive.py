@@ -7,12 +7,18 @@ import jax
 import jax.numpy as jnp
 from typing import Optional
 
-# Enable 64-bit precision for JAX
-jax.config.update('jax_enable_x64', True)
-
 from ethode.units import UnitManager
 from ethode.runtime import QuantityNode, UnitSpec
 from ethode.fields import quantity_field
+
+
+@pytest.fixture(autouse=True, scope='module')
+def enable_x64():
+    """Enable x64 precision for this test module only."""
+    old_x64 = jax.config.jax_enable_x64
+    jax.config.update('jax_enable_x64', True)
+    yield
+    jax.config.update('jax_enable_x64', old_x64)
 
 
 class TestUnitManager:
