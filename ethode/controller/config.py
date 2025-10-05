@@ -76,31 +76,36 @@ class ControllerConfig(BaseModel):
         field_name = info.field_name
         manager = UnitManager.instance()
 
-        # For string inputs like "0.2 / day", parse and check dimensionality
-        if isinstance(v, str) and "/" in v:
-            # Parse as a rate/frequency
+        # Parse input to a quantity
+        if isinstance(v, str):
             q = manager.ensure_quantity(v)
-            # Check if it's a rate (1/time dimension)
-            try:
-                # Try to convert to Hz (1/second) to verify it's a frequency
-                hz_value = q.to("Hz")
-                return manager.to_canonical(q, "frequency")
-            except pint.DimensionalityError:
-                pass
+        elif isinstance(v, pint.Quantity):
+            q = v
+        else:
+            # Numeric value - use default units
+            if field_name in ("kp", "ki"):
+                q = manager.ensure_quantity(v, default_unit="1/second")
+            else:  # kd
+                q = manager.ensure_quantity(v, default_unit="second")
 
-        if field_name in ("kp", "ki"):
-            # These are typically rates (1/time) but can be dimensionless
-            try:
-                return quantity_field("frequency", default_unit="1/second")(v)
-            except (ValueError, pint.DimensionalityError):
-                # Fall back to dimensionless
-                return quantity_field("dimensionless", default_unit="")(v)
-        else:  # kd
-            # Derivative gain can be time or dimensionless
-            try:
-                return quantity_field("time", default_unit="second")(v)
-            except (ValueError, pint.DimensionalityError):
-                return quantity_field("dimensionless", default_unit="")(v)
+        # Convert to canonical form, preserving the original dimension
+        # Don't force specific dimensions - let validation catch issues later
+        dimension_str = str(q.dimensionality)
+
+        # Map common patterns to our canonical dimensions
+        if "1 / [time]" in dimension_str or q.dimensionality == manager.registry.Hz.dimensionality:
+            return manager.to_canonical(q, "frequency")
+        elif "[time]" in dimension_str and "1 /" not in dimension_str:
+            return manager.to_canonical(q, "time")
+        elif q.dimensionality == manager.registry.dimensionless.dimensionality:
+            return manager.to_canonical(q, "dimensionless")
+        else:
+            # Accept any dimension - validation will check compatibility later
+            return (float(q.magnitude), UnitSpec(
+                dimension=dimension_str,
+                symbol=str(q.units),
+                to_canonical=1.0
+            ))
 
     @field_validator("tau", mode="before")
     @classmethod
@@ -112,17 +117,51 @@ class ControllerConfig(BaseModel):
     @classmethod
     def validate_noise_band(cls, v: Any) -> Tuple[Tuple[float, UnitSpec], Tuple[float, UnitSpec]]:
         """Validate noise band as tuple of values."""
-        # Accept various dimensions - typically price/error units
-        try:
-            return tuple_quantity_field("price", default_unit="USD")(v)
-        except (ValueError, pint.DimensionalityError):
-            # Fall back to dimensionless
-            return tuple_quantity_field("dimensionless", default_unit="")(v)
+        manager = UnitManager.instance()
 
-    @field_validator("output_min", "output_max", "rate_limit", mode="before")
+        # Parse the tuple
+        if not isinstance(v, (tuple, list)) or len(v) != 2:
+            raise ValueError("noise_band must be a tuple of two values")
+
+        low, high = v
+
+        # Parse each value
+        low_q = manager.ensure_quantity(low, default_unit="USD")
+        high_q = manager.ensure_quantity(high, default_unit="USD")
+
+        # Check ordering
+        if low_q.magnitude >= high_q.magnitude:
+            raise ValueError("noise_band[0] must be less than noise_band[1]")
+
+        # Convert to canonical form, preserving dimensions
+        dimension_str = str(low_q.dimensionality)
+
+        # Try standard dimensions first
+        for dim_name in ["price", "dimensionless"]:
+            try:
+                low_canonical = manager.to_canonical(low_q, dim_name)
+                high_canonical = manager.to_canonical(high_q, dim_name)
+                return (low_canonical, high_canonical)
+            except (ValueError, pint.DimensionalityError):
+                continue
+
+        # Accept any dimension if standard ones don't work
+        low_spec = (float(low_q.magnitude), UnitSpec(
+            dimension=dimension_str,
+            symbol=str(low_q.units),
+            to_canonical=1.0
+        ))
+        high_spec = (float(high_q.magnitude), UnitSpec(
+            dimension=dimension_str,
+            symbol=str(high_q.units),
+            to_canonical=1.0
+        ))
+        return (low_spec, high_spec)
+
+    @field_validator("output_min", "output_max", mode="before")
     @classmethod
-    def validate_optional_limits(cls, v: Optional[QuantityInput]) -> Optional[Tuple[float, UnitSpec]]:
-        """Validate optional limit parameters."""
+    def validate_optional_output_limits(cls, v: Optional[QuantityInput]) -> Optional[Tuple[float, UnitSpec]]:
+        """Validate optional output limit parameters."""
         if v is None:
             return None
         # These are typically dimensionless or in output units
@@ -132,15 +171,73 @@ class ControllerConfig(BaseModel):
             # Could be in specific units depending on application
             return quantity_field("price", default_unit="USD")(v)
 
-    def to_runtime(self, dtype: jnp.dtype = jnp.float32) -> ControllerRuntime:
+    @field_validator("rate_limit", mode="before")
+    @classmethod
+    def validate_rate_limit(cls, v: Optional[QuantityInput]) -> Optional[Tuple[float, UnitSpec]]:
+        """Validate rate limit parameter."""
+        if v is None:
+            return None
+        # Rate limit should be output_units/time
+        manager = UnitManager.instance()
+
+        # Parse the input
+        if isinstance(v, str) and "/" in v:
+            # It's a rate like "10 USD/hour"
+            q = manager.ensure_quantity(v)
+            # Try to convert to price/time dimension
+            try:
+                return manager.to_canonical(q, "price/time")
+            except (ValueError, pint.DimensionalityError):
+                # Fall back to dimensionless/time
+                try:
+                    return manager.to_canonical(q, "1/time")
+                except:
+                    # Just treat as given
+                    return manager.to_canonical(q, str(q.dimensionality))
+        else:
+            # Default to price/time dimension
+            return quantity_field("price/time", default_unit="USD/second")(v)
+
+    def validate_units(self, verbose: bool = False) -> 'ValidationReport':
+        """Validate unit consistency using pint.
+
+        Runs a dry-run with pint quantities to catch dimension mismatches
+        before building JAX runtime structures.
+
+        Args:
+            verbose: If True, print validation details
+
+        Returns:
+            ValidationReport with results
+        """
+        from ..validation import validate_config_units
+        return validate_config_units(self, verbose=verbose)
+
+    def to_runtime(
+        self,
+        dtype: jnp.dtype = jnp.float32,
+        check_units: bool = True
+    ) -> ControllerRuntime:
         """Convert configuration to runtime structure.
 
         Args:
             dtype: JAX array data type for values
+            check_units: If True, validate units before building runtime
 
         Returns:
             ControllerRuntime with QuantityNodes
+
+        Raises:
+            ValueError: If check_units=True and validation fails
         """
+        # Optionally validate units first
+        if check_units:
+            report = self.validate_units()
+            if not report.success:
+                raise ValueError(
+                    f"Unit validation failed:\n{report}"
+                )
+
         return ControllerRuntime(
             kp=QuantityNode.from_float(self.kp[0], self.kp[1], dtype),
             ki=QuantityNode.from_float(self.ki[0], self.ki[1], dtype),

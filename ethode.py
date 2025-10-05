@@ -97,9 +97,16 @@ class Params(AutoDefault):
 
     def __post_init__(self):
         warnings.warn(
-            "Params base class is deprecated and will be removed in v3.0. "
-            "Please migrate to the new Config/Runtime pattern. "
-            "See ethode.controller.ControllerConfig for an example.",
+            "Params base class is deprecated and will be removed in v3.0.\n"
+            "Migration path:\n"
+            "1. Create a Pydantic config class with unit-aware fields:\n"
+            "   class MyConfig(BaseModel):\n"
+            "       duration: str = '1 hour'  # Unit-aware strings\n"
+            "       price: float = 100.0      # Or plain floats\n"
+            "2. Add a to_runtime() method to convert to JAX-compatible format\n"
+            "3. Use the runtime structure in your simulation\n"
+            "Examples: ethode.controller.ControllerConfig, ethode.fee.FeeConfig\n"
+            "See docs/migration_guide.md for detailed instructions.",
             DeprecationWarning,
             stacklevel=2
         )

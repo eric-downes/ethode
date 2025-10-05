@@ -65,6 +65,48 @@ class QuantityNode(struct.Struct):
         """
         return float(self.value)
 
+    def to_quantity(self, manager: 'UnitManager') -> 'pint.Quantity':
+        """Convert to a pint Quantity for unit checking.
+
+        Args:
+            manager: UnitManager instance for creating quantities
+
+        Returns:
+            pint.Quantity with proper units
+        """
+        from .units import UnitManager
+        if not isinstance(manager, UnitManager):
+            manager = UnitManager.instance()
+        return manager.from_canonical(float(self.value), self.units)
+
+    @classmethod
+    def from_quantity(
+        cls,
+        quantity: 'pint.Quantity',
+        dimension: str,
+        manager: Optional['UnitManager'] = None,
+        dtype: jnp.dtype = jnp.float32
+    ) -> 'QuantityNode':
+        """Create from a pint Quantity.
+
+        Args:
+            quantity: pint Quantity to convert
+            dimension: Expected dimension name
+            manager: UnitManager (uses singleton if None)
+            dtype: JAX array dtype
+
+        Returns:
+            QuantityNode instance
+        """
+        from .units import UnitManager
+        if manager is None:
+            manager = UnitManager.instance()
+        canonical_value, unit_spec = manager.to_canonical(quantity, dimension)
+        return cls(
+            value=jnp.array(canonical_value, dtype=dtype),
+            units=unit_spec
+        )
+
     def __repr__(self) -> str:
         """Pretty representation showing value and units."""
         return f"QuantityNode({self.value}, {self.units.symbol})"
