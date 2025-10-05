@@ -73,6 +73,10 @@ class UnitManager:
             "luminosity": self.registry.candela,
             "price": self.registry.USD,  # Financial dimension
             "dimensionless": self.registry.dimensionless,
+            # Mixed dimensions
+            "price/time": self.registry.USD / self.registry.second,
+            "volume/time": self.registry.dimensionless / self.registry.second,  # tokens/second
+            "price*time": self.registry.USD * self.registry.second,
         }
 
         # Load custom definitions if available

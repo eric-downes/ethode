@@ -4,7 +4,7 @@ This module provides NewType aliases and helper functions to enable
 type-safe handling of dimensioned quantities at the type level.
 """
 
-from typing import NewType, Annotated, TypeVar, Generic, Optional, cast
+from typing import NewType, Annotated, TypeVar, Generic, Optional
 from typing_extensions import TypeAlias
 import pint
 
@@ -289,4 +289,4 @@ def scalar_for_dimension(value: float, dimension: str) -> float:
     scalar_type = DIMENSION_TO_TYPE.get(dimension)
     if scalar_type is None:
         return value
-    return cast(float, scalar_type(value))
+    return scalar_type(value)  # No cast needed - preserves NewType info

@@ -93,19 +93,17 @@ class PIDController:
 
         # Add rate limit if specified
         if hasattr(self, 'rate_limit') and self.rate_limit is not None:
-            # Properly construct the rate_limit with UnitSpec
+            # Properly construct the rate_limit with UnitSpec using unit conversion
             from ..units import UnitManager
             manager = UnitManager.instance()
 
-            # Rate limit is typically in units/second (e.g., USD/second)
-            # Convert the float value to a proper tuple with UnitSpec
-            rate_limit_value = float(self.rate_limit)
-            rate_limit_spec = UnitSpec(
-                dimension="price/time",
-                symbol="USD/second",
-                to_canonical=1.0
-            )
-            self.config.rate_limit = (rate_limit_value, rate_limit_spec)
+            # Convert the rate_limit value to a quantity with units
+            # Assume USD/second if just a float is provided
+            qty = manager.ensure_quantity(f"{self.rate_limit} USD/second", "USD/second")
+
+            # Convert to canonical form for price/time dimension
+            rate_value, rate_spec = manager.to_canonical(qty, "price/time")
+            self.config.rate_limit = (rate_value, rate_spec)
 
             # Rebuild runtime with updated config
             self.runtime = self.config.to_runtime()
