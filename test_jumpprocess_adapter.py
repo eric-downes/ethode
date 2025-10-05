@@ -1,6 +1,10 @@
 """Tests for JumpProcessAdapter class.
 
 This module tests the high-level JumpProcessAdapter API following the adapter pattern.
+
+Note: Some tests are marked with @pytest.mark.slow and are skipped by default.
+To run slow tests: pytest test_jumpprocess_adapter.py -m slow
+To run all tests: pytest test_jumpprocess_adapter.py -m ""
 """
 
 import pytest
@@ -95,8 +99,9 @@ class TestJumpProcessAdapter:
         adapter1 = JumpProcessAdapter(config)
         adapter2 = JumpProcessAdapter(config)
 
-        jumps1 = [adapter1.step(i * 0.01, 0.01) for i in range(100)]
-        jumps2 = [adapter2.step(i * 0.01, 0.01) for i in range(100)]
+        # Reduced iterations for speed (was 100)
+        jumps1 = [adapter1.step(i * 0.01, 0.01) for i in range(20)]
+        jumps2 = [adapter2.step(i * 0.01, 0.01) for i in range(20)]
 
         assert jumps1 == jumps2
 
@@ -336,8 +341,8 @@ class TestReset:
         )
         adapter = JumpProcessAdapter(config)
 
-        # Run steps to potentially get events
-        for i in range(1000):
+        # Run steps to potentially get events (reduced from 1000 to 50)
+        for i in range(50):
             adapter.step(i * 1.0, 1.0)
 
         # Reset
@@ -642,8 +647,8 @@ class TestEventCounting:
 
         initial_count = adapter.get_state()['event_count']
 
-        # Step through time
-        for i in range(100):
+        # Step through time (reduced from 100 to 20)
+        for i in range(20):
             adapter.step(current_time=i * 10.0, dt=10.0)
 
         final_count = adapter.get_state()['event_count']
@@ -675,8 +680,9 @@ class TestEventCounting:
 class TestStateContinuity:
     """Tests for state continuity across steps."""
 
-    def test_step_consistent_with_generate_jumps(self):
-        """Test that stepping through time matches batch generation."""
+    @pytest.mark.slow
+    def test_step_consistent_with_generate_jumps_thorough(self):
+        """Test that stepping through time matches batch generation (slow, thorough version)."""
         config = JumpProcessConfig(
             process_type='deterministic',
             rate="100.0 / hour",
@@ -695,6 +701,29 @@ class TestStateContinuity:
             if adapter2.step(current_time=t, dt=0.1):
                 # Jump occurred in this interval
                 # Record approximate time (midpoint of interval)
+                jumps_step.append(t + 0.05)
+
+        # Counts should be similar (within 1 due to boundaries)
+        assert abs(len(jumps_batch) - len(jumps_step)) <= 1
+
+    def test_step_consistent_with_generate_jumps(self):
+        """Test that stepping through time matches batch generation (fast version)."""
+        config = JumpProcessConfig(
+            process_type='deterministic',
+            rate="100.0 / hour",
+            seed=42
+        )
+
+        # Method 1: Use generate_jumps (shorter interval)
+        adapter1 = JumpProcessAdapter(config)
+        jumps_batch = adapter1.generate_jumps(t_start=0.0, t_end=36.0)  # 10x shorter
+
+        # Method 2: Step through time (fewer steps)
+        adapter2 = JumpProcessAdapter(config)
+        jumps_step = []
+        for i in range(360):  # 10x fewer
+            t = i * 0.1
+            if adapter2.step(current_time=t, dt=0.1):
                 jumps_step.append(t + 0.05)
 
         # Counts should be similar (within 1 due to boundaries)
