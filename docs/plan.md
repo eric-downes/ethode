@@ -22,6 +22,7 @@ The ethode framework has been fully migrated to a modern JAX+penzai architecture
 - Liquidity (SDE-based stochastic liquidity modeling)
 - Hawkes (self-exciting point process)
 - JumpProcess (Poisson and deterministic jump processes)
+- JumpDiffusion (ODE+Jump hybrid simulation with diffrax)
 
 **Infrastructure:**
 - UnitManager singleton for centralized unit handling
@@ -46,6 +47,7 @@ Remove deprecated files:
 ethode.py                      # Legacy Params/Sim/AutoDefault/DEFAULTS
 ethode_extended.py             # Extensions on legacy patterns
 stochastic_extensions.py       # Duplicates new jumpprocess/hawkes
+ethode/controller/legacy.py    # Legacy PIDController/PIDParams
 test_ethode.py                 # Tests legacy code
 test_deprecation.py            # Tests warnings (no longer needed)
 test_stochastic_extensions.py  # Tests legacy implementations
@@ -120,7 +122,7 @@ test_implemented_extensions.py # Tests ethode_extended.py
 
 **Motivation:** Support parameter sweeps efficiently
 
-**Design:**
+**Proposed Design** (not yet implemented):
 ```python
 from ethode import Simulation, ControllerConfig
 import jax.numpy as jnp
@@ -131,7 +133,7 @@ configs = [
     for kp in [0.1, 0.2, 0.3, 0.4, 0.5]
 ]
 
-# Batch simulation with vmap
+# Batch simulation with vmap (PROPOSED API)
 results = Simulation.batch_run(
     configs=configs,
     inputs={'error': jnp.linspace(-1, 1, 100)},
