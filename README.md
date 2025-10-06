@@ -40,9 +40,7 @@ To see usage examples look at the [guide](./guide/)
 # Clone the repository
 git clone <repo-url>
 cd ethode
-
-# Run examples - uv handles everything
-uv run python examples/your_example.py
+uv install -e .
 ```
 
 ### Using pip
