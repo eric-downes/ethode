@@ -9,9 +9,11 @@ import warnings
 # Import everything from the old ethode.py file
 import sys
 import importlib.util
+from pathlib import Path
 
-# Load the old ethode.py file
-spec = importlib.util.spec_from_file_location("ethode_legacy", "ethode.py")
+# Load the old ethode.py file (one directory up from this file)
+ethode_py_path = Path(__file__).parent.parent / "ethode.py"
+spec = importlib.util.spec_from_file_location("ethode_legacy", str(ethode_py_path))
 if spec and spec.loader:
     ethode_legacy = importlib.util.module_from_spec(spec)
     sys.modules['ethode_legacy'] = ethode_legacy
