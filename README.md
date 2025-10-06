@@ -35,31 +35,18 @@ To see usage examples look at the [guide](./guide/)
 ### Using `uv` (recommended)
 
 [`uv`](https://docs.astral.sh/uv/) handles both Python version management and package installation automatically:
-
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd ethode
+# Clone the repository, then in the repository root:
 uv install -e .
 ```
-
-### Using pip
-
-Requires Python ≥3.12:
-
+or 
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd ethode
-
-# Install in development mode
 pip install -e .
-
-# Or install with dev dependencies
-pip install -e ".[dev]"
 ```
 
 ## Quick Start
+
+See the [guide](./guide/) for pedagogical ODE examples.  For more spicy systems see below.
 
 ### Jump-Diffusion with Units
 
@@ -152,14 +139,11 @@ pytest test_hawkes_adapter.py -v
 ## Development
 
 ```bash
-# Install with dev dependencies
-pip install -e ".[dev]"
+# Install with dev dependencies, for now same as prod!
+pip install -e . 
 
 # Type checking
 mypy ethode
-
-# Format code (if using formatter)
-# black ethode tests
 ```
 
 ## Project Structure
