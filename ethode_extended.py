@@ -9,7 +9,6 @@ from collections.abc import Iterator
 from scipy.integrate._ivp.ivp import OdeResult
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
 import numpy as np
 import pint

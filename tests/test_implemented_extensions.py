@@ -31,8 +31,8 @@ class TestFlexibleUnitLoading:
         
     def test_unit_registry_with_auto_load(self):
         """Test backward compatibility with auto-loading"""
-        # Load eth_units.txt from the ethode directory
-        ethode_dir = Path(__file__).parent
+        # Load eth_units.txt from the ethode package directory
+        ethode_dir = Path(__file__).parent.parent / 'ethode'
         eth_units_path = ethode_dir / 'eth_units.txt'
         
         if eth_units_path.exists():
