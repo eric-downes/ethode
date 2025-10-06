@@ -116,8 +116,7 @@ for _ in range(1000):
 
 1. **JAX-first**: All code is designed for JIT compilation and automatic differentiation
 2. **Penzai for state**: Runtime structures use Penzai's `@struct.pytree_dataclass` for automatic pytree registration
-3. **Units everywhere**: Physical units are first-class citizens, not afterthoughts
-4. **No mocks in production**: Dependencies are required, not optional with fallbacks
+3. **Units everywhere**: Physical units are nearly first-class objects, and there is no tradeoff between unit-safety and performance
 5. **Fail fast**: Dimensional errors caught at configuration time, not during simulation
 
 ## Testing
